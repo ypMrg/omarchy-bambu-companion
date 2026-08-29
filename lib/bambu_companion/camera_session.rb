@@ -6,12 +6,11 @@ require_relative "rtsps_snapshot"
 module BambuCompanion
   class CameraSession
     THREAD_JOIN_SECONDS = 0.5
-    WAIT_SLICE_SECONDS = 0.05
 
     def initialize(config:, secret:, store:, emitter:,
                    jpeg_factory: nil, rtsps_factory: nil,
                    ffmpeg_available: nil,
-                   interval: 1.0, sleeper: nil, clock: nil)
+                   interval: 1.0, clock: nil)
       @config = config
       @secret = String(secret)
       @store = store
@@ -20,11 +19,11 @@ module BambuCompanion
       @rtsps_factory = rtsps_factory || ->(**arguments) { RtspsSnapshot.new(**arguments) }
       @ffmpeg_available = ffmpeg_available || -> { RtspsSnapshot.ffmpeg_available? }
       @interval = Float(interval)
-      @sleeper = sleeper || ->(seconds) { sleep(seconds) }
       @clock = clock || -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) }
       @mutex = Mutex.new
       @thread = nil
       @jpeg = nil
+      @rtsps = nil
       @cancelled = true
       @force_snapshot = false
       @last_publish = -Float::INFINITY
@@ -46,16 +45,19 @@ module BambuCompanion
     end
 
     def stop
-      thread = jpeg = nil
+      thread = jpeg = rtsps = nil
       @mutex.synchronize do
         @cancelled = true
         @force_snapshot = false
         thread = @thread
         jpeg = @jpeg
+        rtsps = @rtsps
         @thread = nil
         @jpeg = nil
+        @rtsps = nil
       end
       jpeg&.close
+      rtsps&.close
       join_thread(thread)
       @store.clear
       emit_status("idle")
@@ -124,12 +126,15 @@ module BambuCompanion
         username: @config.username, password: @secret,
         fingerprint: fingerprint
       )
-      loop do
-        break if cancelled?
+      @mutex.synchronize { @rtsps = client }
+      return if cancelled?
 
-        handle_frame(client.capture, force: true)
-        wait_interval
+      client.each_frame(cancelled: method(:cancelled?)) do |jpeg|
+        handle_frame(jpeg)
       end
+    ensure
+      client&.close
+      @mutex.synchronize { @rtsps = nil if @rtsps.equal?(client) }
     end
 
     def handle_frame(jpeg, force: false)
@@ -154,19 +159,6 @@ module BambuCompanion
       @emitter.emit("camera_frame", path: path, generation: generation)
     end
 
-    def wait_interval
-      elapsed = 0.0
-      slice = [WAIT_SLICE_SECONDS, @interval].min
-      while elapsed < @interval && !cancelled? && !force_snapshot?
-        @sleeper.call(slice)
-        elapsed += slice
-      end
-    end
-
-    def force_snapshot?
-      @mutex.synchronize { @force_snapshot }
-    end
-
     def cancelled?
       @mutex.synchronize { @cancelled }
     end
@@ -179,7 +171,7 @@ module BambuCompanion
     end
 
     def fingerprint
-      @config.mqtt_tls_fingerprint || @config.ftps_tls_fingerprint
+      [@config.mqtt_tls_fingerprint, @config.ftps_tls_fingerprint].compact.uniq.freeze
     end
 
     def stringify(value)

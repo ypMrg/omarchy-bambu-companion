@@ -74,11 +74,12 @@ class CameraSessionTest < Minitest::Test
   end
 
   class FakeRtsps
-    attr_reader :captures, :stopped
+    attr_reader :captures, :streams, :stopped
 
     def initialize(frames)
       @frames = frames.dup
       @captures = 0
+      @streams = 0
       @stopped = false
       @gate = Queue.new
     end
@@ -91,14 +92,27 @@ class CameraSessionTest < Minitest::Test
       @frames.shift || JPEG_A
     end
 
+    def each_frame(cancelled:)
+      @streams += 1
+      loop do
+        @gate.pop
+        break if @stopped || cancelled.call
+
+        @captures += 1
+        yield(@frames.shift || JPEG_A)
+      end
+    end
+
     def allow
       @gate << true
     end
 
-    def stop
+    def close
       @stopped = true
       @gate << true
     end
+
+    alias stop close
   end
 
   def test_jpeg_session_publishes_at_most_one_frame_per_interval
@@ -150,9 +164,10 @@ class CameraSessionTest < Minitest::Test
     Dir.mktmpdir do |directory|
       rtsps = FakeRtsps.new([JPEG_A, JPEG_B])
       emitter = FakeEmitter.new
+      arguments = nil
       session = session_for(
         directory, emitter,
-        rtsps_factory: ->(**) { rtsps },
+        rtsps_factory: ->(**values) { arguments = values; rtsps },
         ffmpeg_available: -> { true }
       )
 
@@ -163,6 +178,9 @@ class CameraSessionTest < Minitest::Test
       rtsps.stop
 
       assert_equal 1, rtsps.captures
+      assert_equal 1, rtsps.streams
+      assert rtsps.stopped
+      assert_equal ["11" * 32, "22" * 32], arguments.fetch(:fingerprint)
       refute session.running?
     end
   end
@@ -202,7 +220,6 @@ class CameraSessionTest < Minitest::Test
       rtsps_factory: rtsps_factory || ->(**) { raise "rtsps unused" },
       ffmpeg_available: ffmpeg_available,
       interval: 1.0,
-      sleeper: ->(*) {},
       clock: clock
     )
   end
