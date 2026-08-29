@@ -2,6 +2,7 @@
 
 require "zip"
 require_relative "archive_file_io"
+require_relative "print_file_hints"
 
 module BambuCompanion
   class SourceError < StandardError
@@ -135,7 +136,8 @@ module BambuCompanion
       end
       raise SourceError.new("entry_not_found", "Archive contains no G-code entry") if candidates.empty?
 
-      explicit = hints["gcode_file"] || hints[:gcode_file]
+      explicit = PrintFileHints.internal_gcode_entry(hints)
+      explicit ||= hints["gcode_file"] || hints[:gcode_file]
       unless explicit.to_s.empty? || archive_container_hint?(explicit)
         found = exact_entry(candidates, explicit)
         return found if found

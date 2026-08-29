@@ -41,6 +41,153 @@ class PrinterStateTest < Minitest::Test
     assert_equal 10.0, update.snapshot.fetch(:heatbreak_fan_speed)
   end
 
+  def test_decodes_x2d_dual_nozzle_temperatures_and_active_extruder
+    fixture = JSON.parse(File.read(File.join(__dir__, "fixtures", "x2d-status.json")))
+    update = @state.update(fixture)
+
+    snapshot = update.snapshot
+    assert update.load_model
+    assert_equal "Bambu Lab X2D", snapshot.fetch(:product_name)
+    assert_equal true, snapshot.dig(:camera, :liveview_enabled)
+    assert_equal 1, snapshot.fetch(:active_nozzle)
+    assert_equal 159.0, snapshot.fetch(:nozzle_temp)
+    assert_equal 88.0, snapshot.fetch(:nozzle_target_temp)
+    assert_equal [
+      {
+        id: 0, temp: 220.0, target_temp: 220.0, diameter: 0.4,
+        type: "HS01", active: false
+      },
+      {
+        id: 1, temp: 159.0, target_temp: 88.0, diameter: 0.4,
+        type: "HS01", active: true
+      }
+    ], snapshot.fetch(:nozzles)
+  end
+
+  def test_x2d_plain_idle_temperatures_decode_with_zero_targets
+    update = @state.update("print" => {
+      "device" => {
+        "extruder" => {
+          "info" => [{ "id" => 0, "temp" => 24 }, { "id" => 1, "temp" => 25 }],
+          "state" => 274
+        }
+      }
+    })
+
+    pairs = update.snapshot.fetch(:nozzles).map do |nozzle|
+      [nozzle.fetch(:temp), nozzle.fetch(:target_temp)]
+    end
+    assert_equal [[24.0, 0.0], [25.0, 0.0]], pairs
+  end
+
+  def test_x2d_partial_state_update_reselects_existing_nozzle_values
+    @state.update("print" => {
+      "device" => {
+        "extruder" => {
+          "info" => [{ "id" => 0, "temp" => 13_107_400 },
+                     { "id" => 1, "temp" => 12_451_940 }],
+          "state" => 2
+        }
+      }
+    })
+    update = @state.update("print" => {
+      "device" => { "extruder" => { "state" => 274 } }
+    })
+
+    assert_equal 1, update.snapshot.fetch(:active_nozzle)
+    assert_equal 100.0, update.snapshot.fetch(:nozzle_temp)
+    assert_equal 190.0, update.snapshot.fetch(:nozzle_target_temp)
+  end
+
+  def test_x2d_partial_extruder_info_preserves_the_other_nozzle
+    @state.update("print" => {
+      "device" => {
+        "extruder" => {
+          "info" => [{ "id" => 0, "temp" => 13_107_400 },
+                     { "id" => 1, "temp" => 12_451_940 }],
+          "state" => 274
+        }
+      }
+    })
+
+    update = @state.update("print" => {
+      "device" => { "extruder" => { "info" => [{ "id" => 0, "temp" => 14_418_140 }] } }
+    })
+
+    ids = update.snapshot.fetch(:nozzles).map { |nozzle| nozzle.fetch(:id) }
+    assert_equal [0, 1], ids
+    assert_equal 100.0, update.snapshot.fetch(:nozzles).fetch(1).fetch(:temp)
+  end
+
+  def test_x2d_metadata_only_delta_updates_existing_nozzles
+    @state.update("print" => {
+      "device" => {
+        "extruder" => {
+          "info" => [{ "id" => 0, "temp" => 24 }, { "id" => 1, "temp" => 25 }],
+          "state" => 274
+        }
+      }
+    })
+
+    update = @state.update("print" => {
+      "device" => {
+        "nozzle" => { "info" => [{ "id" => 1, "diameter" => 0.6, "type" => "HF02" }] }
+      }
+    })
+
+    second = update.snapshot.fetch(:nozzles).find { |nozzle| nozzle.fetch(:id) == 1 }
+    assert_equal 0.6, second.fetch(:diameter)
+    assert_equal "HF02", second.fetch(:type)
+  end
+
+  def test_x2d_fresh_top_level_temperature_wins_over_cached_active_nozzle
+    @state.update("print" => {
+      "device" => {
+        "extruder" => {
+          "info" => [{ "id" => 0, "temp" => 13_107_300 },
+                     { "id" => 1, "temp" => 13_107_300 }],
+          "state" => 2
+        }
+      }
+    })
+
+    update = @state.update("print" => {
+      "nozzle_temper" => 230,
+      "nozzle_target_temper" => 240,
+      "device" => { "extruder" => { "state" => 274 } }
+    })
+
+    active = update.snapshot.fetch(:nozzles).find { |nozzle| nozzle.fetch(:active) }
+    assert_equal 1, active.fetch(:id)
+    assert_equal 230.0, active.fetch(:temp)
+    assert_equal 240.0, active.fetch(:target_temp)
+    assert_equal 230.0, update.snapshot.fetch(:nozzle_temp)
+    assert_equal 240.0, update.snapshot.fetch(:nozzle_target_temp)
+  end
+
+  def test_x2d_metadata_received_before_temperatures_is_preserved
+    @state.update("print" => {
+      "device" => {
+        "nozzle" => { "info" => [{ "id" => 1, "diameter" => 0.6, "type" => "HF02" }] }
+      }
+    })
+
+    update = @state.update("print" => {
+      "device" => {
+        "extruder" => {
+          "info" => [{ "id" => 1, "temp" => 14_418_140 }],
+          "state" => 274
+        }
+      }
+    })
+
+    nozzle = update.snapshot.fetch(:nozzles).find { |entry| entry.fetch(:id) == 1 }
+    assert_equal 220.0, nozzle.fetch(:temp)
+    assert_equal 220.0, nozzle.fetch(:target_temp)
+    assert_equal 0.6, nozzle.fetch(:diameter)
+    assert_equal "HF02", nozzle.fetch(:type)
+  end
+
   def test_rejects_nonfinite_numbers_and_oversized_report_strings
     update = @state.update("print" => {
       "nozzle_temper" => Float::INFINITY,
@@ -295,6 +442,54 @@ class PrinterStateTest < Minitest::Test
     assert_equal false, camera.fetch(:liveview_enabled)
   end
 
+  def test_x2d_liveview_preview_overrides_stale_disabled_rtsp_url
+    @state.update("info" => { "module" => [
+      { "name" => "ota", "product_name" => "Bambu Lab X2D" }
+    ] })
+    update = @state.update("print" => {
+      "ipcam" => {
+        "ipcam_dev" => "1", "rtsp_url" => "disable",
+        "liveview_preview" => true
+      }
+    })
+
+    camera = update.snapshot.fetch(:camera)
+    assert_equal true, camera.fetch(:present)
+    assert_equal "rtsps", camera.fetch(:transport)
+    assert_equal true, camera.fetch(:liveview_enabled)
+  end
+
+  def test_x2d_explicit_false_liveview_preview_keeps_liveview_off
+    @state.update("info" => { "module" => [
+      { "name" => "ota", "product_name" => "Bambu Lab X2D" }
+    ] })
+    update = @state.update("print" => {
+      "ipcam" => {
+        "ipcam_dev" => "1", "rtsp_url" => "disable",
+        "liveview_preview" => false
+      }
+    })
+
+    assert_equal false, update.snapshot.fetch(:camera).fetch(:liveview_enabled)
+  end
+
+  def test_x2d_explicit_false_liveview_preview_overrides_stale_rtsp_url
+    @state.update("info" => { "module" => [
+      { "name" => "ota", "product_name" => "Bambu Lab X2D" }
+    ] })
+    update = @state.update("print" => {
+      "ipcam" => {
+        "ipcam_dev" => "1",
+        "rtsp_url" => "rtsps://192.168.1.50:322/streaming/live/1",
+        "liveview_preview" => false
+      }
+    })
+
+    camera = update.snapshot.fetch(:camera)
+    assert_equal "rtsps", camera.fetch(:transport)
+    assert_equal false, camera.fetch(:liveview_enabled)
+  end
+
   def test_h2_product_without_rtsp_url_still_selects_rtsps
     @state.update("info" => { "module" => [
       { "name" => "ota", "product_name" => "Bambu Lab H2D" }
@@ -302,6 +497,19 @@ class PrinterStateTest < Minitest::Test
     update = @state.update("print" => { "ipcam" => { "ipcam_dev" => "1" } })
 
     assert_equal "rtsps", update.snapshot.fetch(:camera).fetch(:transport)
+  end
+
+  def test_x2d_internal_n6_product_id_selects_rtsps
+    @state.update("info" => { "module" => [
+      { "name" => "ota", "product_name" => "N6" }
+    ] })
+    update = @state.update("print" => {
+      "ipcam" => { "ipcam_dev" => "1", "liveview_preview" => true }
+    })
+
+    camera = update.snapshot.fetch(:camera)
+    assert_equal "rtsps", camera.fetch(:transport)
+    assert_equal true, camera.fetch(:liveview_enabled)
   end
 
   def test_absent_ipcam_dev_disables_camera

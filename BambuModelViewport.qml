@@ -48,6 +48,8 @@ Item {
   property real modelTotalBytes: 0
   property string rendererStatus: "compiling"
   property url nativeRouteUrl: ""
+  readonly property real routeYaw: routeCamera.yaw
+  readonly property bool routeItemReady: !!routeLoader.item
 
   signal reloadRequested()
   signal sourceRequested(string source)

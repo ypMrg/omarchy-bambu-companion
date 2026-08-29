@@ -26,7 +26,11 @@ Item {
   property string jobName: "NO ACTIVE PRINT"
   property int percent: 0
   property string remainingValue: "--"
-  property string nozzleValue: "--°"
+  property bool dualNozzles: false
+  property string nozzleLeftValue: "--°"
+  property string nozzleRightValue: "--°"
+  property bool nozzleLeftActive: false
+  property bool nozzleRightActive: false
   property string bedValue: "--°"
   property string layerValue: "-- / --"
   property string zValue: "--"
@@ -250,7 +254,17 @@ Item {
       }
 
       SectionTitle { objectName: "TEMPERATURES" }
-      MetricRow { label: "NOZZLE"; value: pane.nozzleValue }
+      MetricRow {
+        label: pane.dualNozzles ? "NOZZLE LEFT" : "NOZZLE"
+        value: pane.nozzleLeftValue
+        valueColor: pane.nozzleLeftActive ? pane.accent : pane.foreground
+      }
+      MetricRow {
+        visible: pane.dualNozzles
+        label: "NOZZLE RIGHT"
+        value: pane.nozzleRightValue
+        valueColor: pane.nozzleRightActive ? pane.accent : pane.foreground
+      }
       MetricRow { label: "BED"; value: pane.bedValue }
 
       SectionTitle { objectName: "PRINT METRICS" }

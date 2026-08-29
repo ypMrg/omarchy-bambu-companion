@@ -261,6 +261,7 @@ module BambuCompanion
         lastUpdate: state[:last_update], gcodeState: state[:gcode_state],
         subtaskName: state[:subtask_name], percent: state[:percent],
         nozzleTemp: state[:nozzle_temp], nozzleTargetTemp: state[:nozzle_target_temp],
+        nozzles: nozzle_payload(state[:nozzles]), activeNozzle: state[:active_nozzle],
         bedTemp: state[:bed_temp], bedTargetTemp: state[:bed_target_temp],
         layer: state[:layer], totalLayers: state[:total_layers],
         remainingMinutes: state[:remaining_minutes], speedLevel: state[:speed_level],
@@ -281,6 +282,15 @@ module BambuCompanion
         liveviewEnabled: camera[:liveview_enabled] == true,
         ffmpegAvailable: @ffmpeg_available == true
       }
+    end
+
+    def nozzle_payload(nozzles)
+      Array(nozzles).map do |nozzle|
+        {
+          id: nozzle[:id], temp: nozzle[:temp], targetTemp: nozzle[:target_temp],
+          diameter: nozzle[:diameter], type: nozzle[:type], active: nozzle[:active] == true
+        }.compact
+      end
     end
 
     def alert_payload(alerts)

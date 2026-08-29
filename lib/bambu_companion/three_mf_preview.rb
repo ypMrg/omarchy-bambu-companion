@@ -3,6 +3,7 @@
 require "zip"
 require "zlib"
 require_relative "archive_file_io"
+require_relative "print_file_hints"
 
 module BambuCompanion
   class PreviewError < StandardError
@@ -96,6 +97,9 @@ module BambuCompanion
     end
 
     def selected_plate(hints)
+      internal_plate = PrintFileHints.internal_plate_number(hints)
+      return internal_plate if internal_plate
+
       index = hints["plate_idx"] || hints[:plate_idx]
       return Integer(index) + 1 unless index.nil?
 

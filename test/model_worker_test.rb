@@ -6,8 +6,13 @@ require "stringio"
 require "timeout"
 require "tmpdir"
 require "fileutils"
+require "zip"
+require "zlib"
+require "bambu_companion/ftps_client"
 require "bambu_companion/gcode_parser"
+require "bambu_companion/gcode_source"
 require "bambu_companion/print_preview_loader"
+require "bambu_companion/three_mf_preview"
 require "bambu_companion/model_worker"
 
 class ModelWorkerTest < Minitest::Test
@@ -252,6 +257,36 @@ class ModelWorkerTest < Minitest::Test
     end
   end
 
+  class ArchiveFtp
+    attr_reader :retrieved
+
+    def initialize(files)
+      @files = files
+      @retrieved = []
+    end
+
+    def retrbinary(command, block_size)
+      if command.start_with?("NLST ")
+        root = command.delete_prefix("NLST ")
+        prefix = root == "/" ? "/" : "#{root}/"
+        listing = @files.each_key.filter_map do |path|
+          remainder = path.delete_prefix(prefix)
+          path if path.start_with?(prefix) && !remainder.include?("/")
+        end.join("\r\n")
+        listing << "\r\n" unless listing.empty?
+        listing.scan(/.{1,#{block_size}}/m) { |chunk| yield chunk }
+        return
+      end
+
+      path = command.delete_prefix("RETR ")
+      @retrieved << path
+      @files.fetch(path).scan(/.{1,#{block_size}}/m) { |chunk| yield chunk }
+    end
+
+    def size(path) = @files.fetch(path).bytesize
+    def close = nil
+  end
+
   class BlockingFtps
     attr_reader :entered, :release, :cancelled
 
@@ -353,6 +388,52 @@ class ModelWorkerTest < Minitest::Test
     assert_equal "processing", loading.last.fetch(:load_phase)
     assert_nil loading.last.fetch(:load_progress)
     assert_equal "ready", statuses.snapshots.last.fetch(:status)
+  end
+
+  def test_x2d_payload_selects_external_archive_and_internal_plate_end_to_end
+    plate_one_png = test_png(width: 1, red: 0x11)
+    plate_two_png = test_png(width: 2, red: 0x22)
+    archive = test_archive(
+      "Metadata/plate_1.gcode" => gcode(11),
+      "Metadata/plate_2.gcode" => gcode(22),
+      "Metadata/plate_1.png" => plate_one_png,
+      "Metadata/plate_2.png" => plate_two_png
+    )
+    ftp = ArchiveFtp.new(
+      "/Untitled.gcode.3mf" => test_archive("Metadata/plate_2.gcode" => gcode(99)),
+      "/cache/Untitled.gcode.3mf" => archive
+    )
+    client = BambuCompanion::FtpsClient.new(
+      config: config_fixture, secret: "session-secret", attempts: 1,
+      ftp_factory: ->(*) { ftp }
+    )
+    emitter = Emitter.new
+    statuses = StatusCollector.new
+    worker = BambuCompanion::ModelWorker.new(
+      ftps_client: client,
+      loader: BambuCompanion::PrintPreviewLoader.new(
+        source: BambuCompanion::GcodeSource.new,
+        gcode_parser: BambuCompanion::GcodeParser.new(max_segments: 20),
+        preview_source: BambuCompanion::ThreeMfPreview.new
+      ),
+      emitter: emitter, on_status: statuses,
+      geometry_directory: @geometry_directory
+    )
+    fixture = JSON.parse(File.read(File.join(__dir__, "fixtures", "x2d-status.json")))
+    hints = fixture.fetch("print")
+
+    result = worker.process(worker.submit(hints: hints))
+    assert result, statuses.snapshots.inspect
+
+    assert_equal ["/cache/Untitled.gcode.3mf"], ftp.retrieved
+    manifest = emitter.events.find { |event,| event == "geometry_begin" }.fetch(1)
+    packed = File.binread(manifest.fetch(:gcode).fetch(:path)).unpack("e*")
+    assert_equal 11.0, packed.fetch(3)
+    preview = emitter.events.filter_map do |event, payload|
+      payload.fetch(:data) if event == "geometry_preview_chunk"
+    end.join
+    assert_equal [plate_one_png].pack("m0"), preview
+    assert_equal 1, manifest.fetch(:preview).fetch(:width)
   end
 
   def test_publishes_preview_and_gcode_as_one_ordered_transaction
@@ -1052,6 +1133,30 @@ class ModelWorkerTest < Minitest::Test
 
   def bundle(preview: nil, gcode: nil)
     BambuCompanion::PrintPreviewBundle.new(preview: preview, gcode: gcode)
+  end
+
+  def test_archive(entries)
+    buffer = Zip::OutputStream.write_buffer do |zip|
+      entries.each do |name, content|
+        zip.put_next_entry(name)
+        zip.write(content)
+      end
+    end
+    buffer.string
+  end
+
+  def test_png(width:, red:)
+    signature = "\x89PNG\r\n\x1A\n".b
+    header = [width, 1, 8, 2, 0, 0, 0].pack("NNC5")
+    pixels = "\x00".b + ([red, 0, 0].pack("C3") * width)
+    signature + png_chunk("IHDR", header) +
+      png_chunk("IDAT", Zlib::Deflate.deflate(pixels)) + png_chunk("IEND", "".b)
+  end
+
+  def png_chunk(type, body)
+    type = String(type).b
+    body = String(body).b
+    [body.bytesize].pack("N") + type + body + [Zlib.crc32(type + body)].pack("N")
   end
 
   def drain_queue(queue)

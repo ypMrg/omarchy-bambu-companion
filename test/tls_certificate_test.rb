@@ -8,6 +8,21 @@ require "bambu_companion/tls_certificate"
 class TlsCertificateTest < Minitest::Test
   FakeStoreContext = Struct.new(:current_cert, :error_depth)
 
+  class FakeHandshakeSocket
+    attr_reader :read_waits, :write_waits
+
+    def initialize(results)
+      @results = results
+      @read_waits = []
+      @write_waits = []
+    end
+
+    def connect_nonblock(**) = @results.shift || self
+    def to_io = self
+    def wait_readable(timeout) = @read_waits << timeout
+    def wait_writable(timeout) = @write_waits << timeout
+  end
+
   def test_normalizes_sha256_fingerprints
     colon_separated = Array.new(32, "ab").join(":")
 
@@ -44,6 +59,23 @@ class TlsCertificateTest < Minitest::Test
     assert context.verify_callback.call(
       false, FakeStoreContext.new(attacker, 1)
     )
+  end
+
+  def test_pinned_context_accepts_any_explicitly_trusted_device_leaf
+    mqtt = certificate(common_name: "printer-mqtt")
+    ftps = certificate(common_name: "printer-ftps")
+    attacker = certificate(common_name: "printer-attacker")
+    context = OpenSSL::SSL::SSLContext.new
+
+    BambuCompanion::TlsCertificate.configure_pinned_context(
+      context,
+      [BambuCompanion::TlsCertificate.fingerprint(mqtt),
+       BambuCompanion::TlsCertificate.fingerprint(ftps)]
+    )
+
+    assert context.verify_callback.call(false, FakeStoreContext.new(mqtt, 0))
+    assert context.verify_callback.call(false, FakeStoreContext.new(ftps, 0))
+    refute context.verify_callback.call(false, FakeStoreContext.new(attacker, 0))
   end
 
   def test_pin_rejection_becomes_a_stable_non_secret_error
@@ -114,6 +146,40 @@ class TlsCertificateTest < Minitest::Test
     end
 
     assert_equal "cancelled", error.code
+  end
+
+  def test_pinned_handshake_waits_nonblocking_until_connected
+    socket = FakeHandshakeSocket.new([:wait_readable, :wait_writable, :connected])
+    clock = -> { 0.0 }
+
+    result = BambuCompanion::TlsCertificate.connect_with_deadline(
+      socket, handshake_timeout: 1.0,
+      cancelled: -> { false }, clock: clock
+    )
+
+    assert_same socket, result
+    assert_equal [0.1], socket.read_waits
+    assert_equal [0.1], socket.write_waits
+  end
+
+  def test_pinned_handshake_honors_cancellation_and_deadline
+    socket = FakeHandshakeSocket.new([:wait_readable])
+    cancelled = assert_raises(BambuCompanion::TlsCertificateError) do
+      BambuCompanion::TlsCertificate.connect_with_deadline(
+        socket, handshake_timeout: 1.0,
+        cancelled: -> { true }, clock: -> { 0.0 }
+      )
+    end
+    assert_equal "cancelled", cancelled.code
+
+    times = [0.0, 2.0]
+    timed_out = assert_raises(BambuCompanion::TlsCertificateError) do
+      BambuCompanion::TlsCertificate.connect_with_deadline(
+        FakeHandshakeSocket.new([:wait_writable]), handshake_timeout: 1.0,
+        cancelled: -> { false }, clock: -> { times.shift || 2.0 }
+      )
+    end
+    assert_equal "timeout", timed_out.code
   end
 
   private

@@ -3,6 +3,7 @@
 require_relative "test_helper"
 require "tmpdir"
 require "zip"
+require "zlib"
 require "bambu_companion/three_mf_preview"
 
 class ThreeMfPreviewTest < Minitest::Test
@@ -36,6 +37,25 @@ class ThreeMfPreviewTest < Minitest::Test
       assert_equal "image/png", preview.media_type
       assert preview.frozen?
       assert preview.data.frozen?
+    end
+  end
+
+  def test_x2d_internal_path_takes_precedence_over_one_based_plate_idx
+    plate_two = png_with_width(2)
+    with_archive(
+      "Metadata/plate_1.png" => PNG_1X1,
+      "Metadata/plate_2.png" => plate_two
+    ) do |path|
+      preview = extractor.extract(
+        path,
+        hints: {
+          "gcode_file" => "/data/Metadata/plate_1.gcode",
+          "plate_idx" => 1
+        }
+      )
+
+      assert_equal 1, preview.width
+      assert_equal PNG_1X1, preview.data
     end
   end
 
@@ -133,6 +153,13 @@ class ThreeMfPreviewTest < Minitest::Test
   end
 
   private
+
+  def png_with_width(width)
+    image = PNG_1X1.dup
+    image[16, 4] = [width].pack("N")
+    image[29, 4] = [Zlib.crc32(image.byteslice(12, 17))].pack("N")
+    image
+  end
 
   def extractor = described_class
 

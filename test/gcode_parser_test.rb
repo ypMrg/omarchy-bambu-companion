@@ -48,6 +48,60 @@ class GcodeParserTest < Minitest::Test
     assert_equal [1.0, 0.0, 0.2, 2.0, 0.0, 0.2], geometry.segments.fetch(0)
   end
 
+  def test_x2d_absolute_extrusion_is_independent_for_each_tool
+    gcode = <<~GCODE
+      G90
+      M82
+      ;TYPE:WALL-OUTER
+      G1 X0 Y0 Z0.2
+      T0
+      G1 X1 Y0 E5
+      T1
+      G1 X2 Y0 E1
+      T0
+      G1 X3 Y0 E6
+    GCODE
+
+    geometry = BambuCompanion::GcodeParser.new(max_segments: 10).parse(StringIO.new(gcode))
+
+    assert_equal 3, geometry.segments.length
+    assert_equal [1.0, 2.0, 3.0], (geometry.segments.map { |segment| segment.fetch(3) })
+  end
+
+  def test_x2d_h_parameter_selects_hotend_when_t_is_a_filament_id
+    gcode = <<~GCODE
+      G90
+      M82
+      ;TYPE:WALL-OUTER
+      G1 X0 Y0 Z0.2
+      T7 H1
+      G1 X1 Y0 E3
+      T0 H0
+      G1 X2 Y0 E1
+    GCODE
+
+    geometry = BambuCompanion::GcodeParser.new(max_segments: 10).parse(StringIO.new(gcode))
+
+    assert_equal 2, geometry.segments.length
+  end
+
+  def test_x2d_tool_sentinels_do_not_replace_the_active_extruder
+    gcode = <<~GCODE
+      G90
+      M82
+      ;TYPE:WALL-OUTER
+      G1 X0 Y0 Z0.2
+      T1
+      G1 X1 Y0 E4
+      T65535
+      G1 X2 Y0 E5
+    GCODE
+
+    geometry = BambuCompanion::GcodeParser.new(max_segments: 10).parse(StringIO.new(gcode))
+
+    assert_equal 2, geometry.segments.length
+  end
+
   def test_decimation_is_deterministic_and_strictly_bounded
     lines = ["G90", "M83", ";TYPE:WALL-OUTER", "G1 X0 Y0 Z0.2"]
     100.times { |index| lines << "G1 X#{index + 1} Y0 E1" }
@@ -74,6 +128,21 @@ class GcodeParserTest < Minitest::Test
     geometry.segments.each_cons(2) do |left, right|
       assert_equal left.values_at(3, 4, 5), right.values_at(0, 1, 2)
     end
+  end
+
+  def test_x2d_combined_route_decimation_reaches_the_final_toolpath_endpoint
+    lines = ["G90", "M83", ";TYPE:WALL-OUTER", "G1 X0 Y0 Z0.2"]
+    20.times do |index|
+      lines << "T#{index % 2}"
+      lines << "G1 X#{index + 1} Y0 E1"
+    end
+
+    geometry = BambuCompanion::GcodeParser.new(max_segments: 2).parse(
+      StringIO.new(lines.join("\n"))
+    )
+
+    assert_operator geometry.segments.length, :<=, 2
+    assert_equal 20.0, geometry.segments.last.fetch(3)
   end
 
   def test_rejects_files_without_known_outer_wall_markers

@@ -32,7 +32,7 @@ module BambuCompanion
         return true unless store_context.error_depth.zero?
 
         actual = TlsCertificate.fingerprint(store_context.current_cert)
-        accepted = secure_equal?(@expected, actual)
+        accepted = @expected.any? { |fingerprint| secure_equal?(fingerprint, actual) }
         @mutex.synchronize { @rejected = !accepted }
         accepted
       rescue StandardError
@@ -64,12 +64,20 @@ module BambuCompanion
       raise_certificate_error("invalid_fingerprint", "TLS fingerprint is invalid")
     end
 
+    def normalize_fingerprints(value)
+      values = value.is_a?(Array) ? value : [value]
+      normalized = values.map { |fingerprint| normalize_fingerprint(fingerprint) }.uniq
+      raise_certificate_error("invalid_fingerprint", "TLS fingerprint is invalid") if normalized.empty?
+
+      normalized.freeze
+    end
+
     def fingerprint(certificate)
       OpenSSL::Digest::SHA256.hexdigest(certificate.to_der).upcase.freeze
     end
 
     def configure_pinned_context(context, expected_fingerprint)
-      verifier = PinVerifier.new(normalize_fingerprint(expected_fingerprint))
+      verifier = PinVerifier.new(normalize_fingerprints(expected_fingerprint))
       context.verify_mode = OpenSSL::SSL::VERIFY_PEER
       context.verify_callback = verifier
       context.instance_variable_set(VERIFIER_IVAR, verifier)
@@ -85,14 +93,20 @@ module BambuCompanion
       ), cause: nil
     end
 
-    def open_pinned(host:, port:, fingerprint:, connect_timeout: 8.0)
+    def open_pinned(host:, port:, fingerprint:, connect_timeout: 8.0,
+                    handshake_timeout: connect_timeout,
+                    cancelled: -> { false },
+                    clock: -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) })
       raw = Socket.tcp(String(host), Integer(port), connect_timeout: connect_timeout)
       context = OpenSSL::SSL::SSLContext.new
       configure_pinned_context(context, fingerprint)
       tls = OpenSSL::SSL::SSLSocket.new(raw, context)
       tls.sync_close = true
       tls.hostname = String(host) if tls.respond_to?(:hostname=)
-      tls.connect
+      connect_with_deadline(
+        tls, handshake_timeout: handshake_timeout,
+        cancelled: cancelled, clock: clock
+      )
       tls
     rescue OpenSSL::SSL::SSLError => error
       raw&.close
@@ -100,6 +114,44 @@ module BambuCompanion
     rescue StandardError
       raw&.close
       raise
+    end
+
+    def connect_with_deadline(socket, handshake_timeout:, cancelled:, clock:)
+      timeout = Float(handshake_timeout)
+      unless timeout.finite? && timeout.positive?
+        raise ArgumentError, "handshake_timeout must be positive"
+      end
+
+      deadline = clock.call + timeout
+      loop do
+        raise_cancelled if cancelled.call
+
+        result = socket.connect_nonblock(exception: false)
+        return socket unless %i[wait_readable wait_writable].include?(result)
+
+        remaining = deadline - clock.call
+        raise_handshake_timeout unless remaining.positive?
+
+        wait = [remaining, 0.1].min
+        io = socket.to_io
+        if result == :wait_readable
+          io.wait_readable(wait)
+        else
+          io.wait_writable(wait)
+        end
+      end
+    end
+
+    def raise_cancelled
+      raise TlsCertificateError.new(
+        "cancelled", "Printer TLS handshake cancelled"
+      ), cause: nil
+    end
+
+    def raise_handshake_timeout
+      raise TlsCertificateError.new(
+        "timeout", "Printer TLS handshake timed out"
+      ), cause: nil
     end
 
     def identity(certificate)

@@ -2,7 +2,9 @@
 
 require "net/ftp"
 require "uri"
+require_relative "archive_name"
 require_relative "ftps_error"
+require_relative "print_file_hints"
 
 module BambuCompanion
   class SdCardFileLocator
@@ -42,12 +44,24 @@ module BambuCompanion
       return exact_names.first if exact_names.one?
       raise_ambiguous if exact_names.length > 1
 
+      if PrintFileHints.internal_gcode_entry(hints)
+        x2d_match = find_x2d_archive(paths, hints)
+        return x2d_match if x2d_match
+      end
+
       tokens = records.filter_map { |record| record[:token] }.uniq
       matches = prefer_active_files(
         paths.select { |path| tokens.include?(canonical_name(path)) }
       )
       return matches.first if matches.one?
       raise_ambiguous if matches.length > 1
+
+      if PrintFileHints.internal_gcode_entry(hints)
+        raise FtpsError.new(
+          "file_not_found",
+          "Active print archive is not exposed on external storage"
+        ), cause: nil
+      end
 
       raise_not_found
     end
@@ -84,6 +98,40 @@ module BambuCompanion
       active.empty? ? matches : active
     end
 
+    def find_x2d_archive(paths, hints)
+      values = hints.to_h
+      subtask = values["subtask_name"] || values[:subtask_name]
+      token = human_hint_record(subtask)&.fetch(:token, nil)
+      return if token.nil? || token.empty?
+
+      matches = prefer_active_files(
+        paths.select { |path| canonical_name(path) == token }
+      )
+      [".gcode.3mf", ".3mf", ".gcode"].each do |extension|
+        tier = matches.select { |path| File.basename(path).downcase.end_with?(extension) }
+        selected = select_x2d_tier(tier)
+        return selected if selected
+      end
+      nil
+    end
+
+    def select_x2d_tier(paths)
+      return if paths.empty?
+
+      best_rank = paths.map { |path| x2d_location_rank(path) }.min
+      preferred = paths.select { |path| x2d_location_rank(path) == best_rank }
+      return preferred.first if preferred.one?
+
+      raise_ambiguous
+    end
+
+    def x2d_location_rank(path)
+      return 0 if path.start_with?("/cache/")
+      return 1 if File.dirname(path) == "/"
+
+      2
+    end
+
     def raise_ambiguous
       raise FtpsError.new(
         "ambiguous_file", "Multiple SD-card files match the active print"
@@ -118,7 +166,9 @@ module BambuCompanion
       check_cancelled!(cancelled)
       ftp.retrbinary("NLST #{root}", LIST_BLOCK_SIZE) do |chunk|
         check_cancelled!(cancelled)
-        chunk = String(chunk)
+        # Offsets below are byte offsets because listings can contain UTF-8 names
+        # and are appended with byteslice into a binary buffer.
+        chunk = String(chunk).b
         budget[:bytes] += chunk.bytesize
         raise_listing_too_large if budget[:bytes] > @max_bytes
 
@@ -170,7 +220,11 @@ module BambuCompanion
     end
 
     def normalize_listing(root, entry)
-      text = String(entry).tr("\\", "/")
+      text = String(entry).dup
+      text.force_encoding(Encoding::UTF_8) if text.encoding == Encoding::BINARY
+      return unless text.valid_encoding?
+
+      text = text.tr("\\", "/")
       return if unsafe_text?(text)
 
       text = text.gsub(%r{/+}, "/")
@@ -274,9 +328,7 @@ module BambuCompanion
     end
 
     def canonical_name(value)
-      File.basename(String(value)).downcase
-          .sub(/\.gcode\.3mf\z/, "").sub(/\.gcode\z/, "").sub(/\.3mf\z/, "")
-          .gsub(/[^a-z0-9]+/, "")
+      ArchiveName.canonical(value)
     end
   end
 end

@@ -101,6 +101,33 @@ class GcodeSourceTest < Minitest::Test
     end
   end
 
+  def test_x2d_internal_path_selects_archive_entry_before_plate_idx
+    entries = {
+      "Metadata/plate_1.gcode" => "PLATE1\n",
+      "Metadata/plate_2.gcode" => "PLATE2\n"
+    }
+    with_zip(entries) do |path|
+      hints = {
+        "gcode_file" => "/data/Metadata/plate_1.gcode",
+        "plate_idx" => 1
+      }
+
+      assert_equal "PLATE1\n", read_source(path, hints)
+    end
+  end
+
+  def test_x2d_internal_path_can_arrive_in_file_hint
+    entries = {
+      "Metadata/plate_1.gcode" => "PLATE1\n",
+      "Metadata/plate_2.gcode" => "PLATE2\n"
+    }
+    with_zip(entries) do |path|
+      assert_equal "PLATE1\n", read_source(
+        path, { "file" => "/data/Metadata/plate_1.gcode", "plate_idx" => 1 }
+      )
+    end
+  end
+
   def test_archive_filename_hint_does_not_override_the_unique_internal_gcode
     with_zip("Metadata/plate_1.gcode" => "LIVE-PLATE\n") do |path|
       hints = {

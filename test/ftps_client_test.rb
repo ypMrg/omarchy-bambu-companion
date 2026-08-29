@@ -284,6 +284,132 @@ class FtpsClientTest < Minitest::Test
     assert_equal "ambiguous_file", error.code
   end
 
+  def test_x2d_internal_entry_prefers_sliced_archive_over_project_archive
+    object, = client({
+      "/Untitled.3mf" => "project", "/Untitled.gcode.3mf" => "sliced"
+    })
+    Dir.mktmpdir do |dir|
+      destination = File.join(dir, "download")
+      remote = object.download(
+        hints: {
+          "file" => "/data/Metadata/plate_1.gcode",
+          "gcode_file" => "/data/Metadata/plate_1.gcode",
+          "subtask_name" => "Untitled", "plate_idx" => 1
+        },
+        destination: destination
+      )
+
+      assert_equal "/Untitled.gcode.3mf", remote
+      assert_equal "sliced", File.binread(destination)
+    end
+  end
+
+  def test_x2d_internal_entry_falls_back_to_project_archive
+    object, = client({ "/Untitled.3mf" => "project" })
+    Dir.mktmpdir do |dir|
+      remote = object.download(
+        hints: {
+          "gcode_file" => "/data/Metadata/plate_1.gcode",
+          "subtask_name" => "Untitled"
+        },
+        destination: File.join(dir, "download")
+      )
+
+      assert_equal "/Untitled.3mf", remote
+    end
+  end
+
+  def test_x2d_internal_entry_matches_unicode_print_name
+    object, = client({ "/cache/模型.gcode.3mf" => "sliced" })
+    Dir.mktmpdir do |dir|
+      destination = File.join(dir, "download")
+      remote = object.download(
+        hints: {
+          "gcode_file" => "/data/Metadata/plate_1.gcode",
+          "subtask_name" => "模型"
+        },
+        destination: destination
+      )
+
+      assert_equal "/cache/模型.gcode.3mf", remote
+      assert_equal "sliced", File.binread(destination)
+    end
+  end
+
+  def test_x2d_missing_external_archive_has_actionable_error
+    object, = client({})
+
+    error = assert_raises(BambuCompanion::FtpsError) do
+      object.download(
+        hints: {
+          "gcode_file" => "/data/Metadata/plate_1.gcode",
+          "subtask_name" => "Untitled"
+        },
+        destination: "/tmp/not-written"
+      )
+    end
+
+    assert_equal "file_not_found", error.code
+    assert_equal "Active print archive is not exposed on external storage", error.message
+  end
+
+  def test_x2d_internal_entry_prefers_active_cache_copy_over_root_duplicate
+    object, = client({
+      "/Untitled.gcode.3mf" => "root",
+      "/cache/Untitled.gcode.3mf" => "cache"
+    })
+
+    Dir.mktmpdir do |dir|
+      destination = File.join(dir, "download")
+      remote = object.download(
+        hints: {
+          "gcode_file" => "/data/Metadata/plate_1.gcode",
+          "subtask_name" => "Untitled"
+        },
+        destination: destination
+      )
+
+      assert_equal "/cache/Untitled.gcode.3mf", remote
+      assert_equal "cache", File.binread(destination)
+    end
+  end
+
+  def test_x2d_internal_entry_keeps_duplicates_in_cache_ambiguous
+    object, = client({
+      "/cache/Untitled.gcode.3mf" => "first",
+      "/cache/untitled.gcode.3mf" => "second"
+    })
+
+    error = assert_raises(BambuCompanion::FtpsError) do
+      object.download(
+        hints: {
+          "gcode_file" => "/data/Metadata/plate_1.gcode",
+          "subtask_name" => "Untitled"
+        },
+        destination: "/tmp/not-written"
+      )
+    end
+
+    assert_equal "ambiguous_file", error.code
+  end
+
+  def test_x2d_internal_entry_does_not_select_extracted_plate_gcode_first
+    object, = client({
+      "/plate_1.gcode" => "extracted", "/Untitled.gcode.3mf" => "sliced"
+    })
+    Dir.mktmpdir do |dir|
+      remote = object.download(
+        hints: {
+          "file" => "/data/Metadata/plate_1.gcode",
+          "subtask_name" => "Untitled"
+        },
+        destination: File.join(dir, "download")
+      )
+
+      assert_equal "/Untitled.gcode.3mf", remote
+    end
+  end
+
   def test_stops_before_exceeding_download_limit
     object, = client({ "/large.gcode" => "x" * 20 }, max_bytes: 10)
     Dir.mktmpdir do |dir|

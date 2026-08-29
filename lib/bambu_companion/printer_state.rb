@@ -51,7 +51,7 @@ module BambuCompanion
     CAMERA_ABSENT = {
       present: false, transport: "none", liveview_enabled: false
     }.freeze
-    RTSP_SERIES = /X1|X2|H2|P2/i
+    RTSP_SERIES = /X1|X2|H2|P2|N6/i
 
     def initialize(clock: -> { Time.now.utc })
       @clock = clock
@@ -88,6 +88,7 @@ module BambuCompanion
         @values[target] = converted unless converted.nil?
       end
       update_alerts(print_state)
+      update_extruders(print_state)
       update_printer_identity(report)
       update_camera(print_state)
       @values[:last_update] = @clock.call.utc.iso8601
@@ -250,6 +251,125 @@ module BambuCompanion
       nil
     end
 
+    def update_extruders(print_state)
+      device = print_state["device"]
+      return unless device.is_a?(Hash)
+
+      extruder = device["extruder"]
+      nozzle_state = device["nozzle"]
+      return unless extruder.is_a?(Hash) || nozzle_state.is_a?(Hash)
+
+      nozzles = Array(@values[:nozzles]).map(&:dup)
+      if extruder.is_a?(Hash) && extruder["info"].is_a?(Array)
+        decoded = extruder["info"].filter_map { |entry| decode_extruder(entry) }
+        nozzles = merge_nozzle_updates(nozzles, decoded)
+      end
+      nozzles = merge_nozzle_metadata(nozzles, nozzle_state)
+
+      active = decode_active_extruder(extruder["state"]) if extruder.is_a?(Hash)
+      active ||= @values[:active_nozzle]
+      @values[:active_nozzle] = active unless active.nil?
+      nozzles.each { |nozzle| nozzle[:active] = nozzle[:id] == active }
+
+      selected = nozzles.find { |nozzle| nozzle[:id] == active }
+      if selected
+        merge_active_nozzle_temperature(selected, print_state)
+      end
+
+      @values[:nozzles] = nozzles.sort_by { |nozzle| nozzle[:id] }.map(&:freeze).freeze
+    end
+
+    def merge_active_nozzle_temperature(selected, print_state)
+      fresh_temp = converted_report_value(print_state, "nozzle_temper", :float)
+      fresh_target = converted_report_value(print_state, "nozzle_target_temper", :float)
+
+      if fresh_temp
+        selected[:temp] = fresh_temp
+      elsif selected.key?(:temp)
+        @values[:nozzle_temp] = selected[:temp]
+      end
+
+      if fresh_target
+        selected[:target_temp] = fresh_target
+      elsif selected.key?(:target_temp)
+        @values[:nozzle_target_temp] = selected[:target_temp]
+      end
+    end
+
+    def converted_report_value(print_state, key, kind)
+      return unless print_state.key?(key)
+
+      convert(print_state[key], kind)
+    end
+
+    def merge_nozzle_updates(nozzles, updates)
+      by_id = nozzles.to_h { |nozzle| [nozzle[:id], nozzle] }
+      updates.each do |update|
+        by_id[update[:id]] = by_id.fetch(update[:id], {}).merge(update)
+      end
+      by_id.values
+    end
+
+    def decode_extruder(entry)
+      return unless entry.is_a?(Hash)
+
+      id = Integer(entry["id"])
+      return unless (0..15).cover?(id)
+
+      temperatures = decode_extruder_temperature(entry["temp"])
+      return unless temperatures
+
+      { id: id, temp: temperatures[0], target_temp: temperatures[1] }
+    rescue ArgumentError, TypeError
+      nil
+    end
+
+    def decode_extruder_temperature(value)
+      number = Float(value)
+      return unless number.finite? && number >= 0 && number <= 0xFFFF_FFFF
+
+      if number <= 0xFFFF && number != number.to_i
+        return [number, 0.0]
+      end
+
+      packed = Integer(number)
+      [(packed & 0xFFFF).to_f, ((packed >> 16) & 0xFFFF).to_f]
+    rescue ArgumentError, TypeError, FloatDomainError
+      nil
+    end
+
+    def decode_active_extruder(value)
+      state = Integer(value)
+      count = state & 0x0F
+      active = (state >> 4) & 0x0F
+      active if count.positive? && active < count
+    rescue ArgumentError, TypeError
+      nil
+    end
+
+    def merge_nozzle_metadata(nozzles, nozzle_state)
+      return nozzles unless nozzle_state.is_a?(Hash) && nozzle_state["info"].is_a?(Array)
+
+      metadata = nozzle_state["info"].each_with_object({}) do |entry, result|
+        next unless entry.is_a?(Hash)
+
+        id = Integer(entry["id"])
+        next unless (0..15).cover?(id)
+
+        result[id] = {
+          diameter: convert(entry["diameter"], :float),
+          type: clean_string(entry["type"])
+        }.compact
+      rescue ArgumentError, TypeError
+        next
+      end
+      by_id = nozzles.to_h { |nozzle| [nozzle[:id], nozzle] }
+      metadata.each do |id, attributes|
+        by_id[id] = by_id.fetch(id, { id: id }).merge(attributes)
+      end
+      by_id.values
+    end
+
     def unsigned_integer(value)
       Integer(value) & 0xFFFF_FFFF
     rescue ArgumentError, TypeError
@@ -261,6 +381,7 @@ module BambuCompanion
       current = @values[:camera] || CAMERA_ABSENT
       present = current[:present]
       rtsp_url = current[:rtsp_url]
+      liveview_preview = current[:liveview_preview]
 
       if ipcam.is_a?(Hash)
         if ipcam.key?("ipcam_dev")
@@ -269,39 +390,57 @@ module BambuCompanion
         if ipcam.key?("rtsp_url")
           rtsp_url = clean_string(ipcam["rtsp_url"])
         end
+        if ipcam.key?("liveview_preview")
+          liveview_preview = boolean_value(ipcam["liveview_preview"])
+        end
       end
 
       @values[:camera] = camera_from(
         present: present, rtsp_url: rtsp_url,
-        product_name: @values[:product_name]
+        product_name: @values[:product_name], liveview_preview: liveview_preview
       )
     end
 
-    def camera_from(present:, rtsp_url:, product_name:)
+    def camera_from(present:, rtsp_url:, product_name:, liveview_preview: nil)
       unless present
         return { present: false, transport: "none", liveview_enabled: false,
-                 rtsp_url: rtsp_url }.freeze
+                 rtsp_url: rtsp_url, liveview_preview: liveview_preview }.freeze
       end
 
       url = rtsp_url.to_s
+      if liveview_preview == false && product_name.to_s.match?(RTSP_SERIES)
+        return {
+          present: true, transport: "rtsps", liveview_enabled: false,
+          rtsp_url: rtsp_url, liveview_preview: liveview_preview
+        }.freeze
+      end
       if url.match?(%r{\Artsps?://}i)
         return {
           present: true, transport: "rtsps", liveview_enabled: true,
-          rtsp_url: rtsp_url
+          rtsp_url: rtsp_url, liveview_preview: liveview_preview
         }.freeze
       end
       if url.casecmp("disable").zero?
+        enabled = liveview_preview == true && product_name.to_s.match?(RTSP_SERIES)
         return {
-          present: true, transport: "rtsps", liveview_enabled: false,
-          rtsp_url: rtsp_url
+          present: true, transport: "rtsps", liveview_enabled: enabled,
+          rtsp_url: rtsp_url, liveview_preview: liveview_preview
         }.freeze
       end
 
       transport = product_name.to_s.match?(RTSP_SERIES) ? "rtsps" : "jpeg_tcp"
       {
         present: true, transport: transport, liveview_enabled: true,
-        rtsp_url: rtsp_url
+        rtsp_url: rtsp_url, liveview_preview: liveview_preview
       }.freeze
+    end
+
+    def boolean_value(value)
+      return value if value == true || value == false
+      return true if value.to_s.strip.match?(/\A(?:1|true|enable)\z/i)
+      return false if value.to_s.strip.match?(/\A(?:0|false|disable)\z/i)
+
+      nil
     end
 
     def ipcam_present?(value)

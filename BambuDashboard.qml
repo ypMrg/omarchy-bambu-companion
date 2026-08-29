@@ -271,8 +271,11 @@ Item {
             jobName: root.service.subtaskName || "NO ACTIVE PRINT"
             percent: root.service.percent
             remainingValue: root.service.formatDuration(root.service.remainingMinutes)
-            nozzleValue: root.service.formatTempPair(
-              root.service.nozzleTemp, root.service.nozzleTargetTemp)
+            dualNozzles: root.service.hasDualNozzles()
+            nozzleLeftValue: root.service.formatNozzle(0)
+            nozzleRightValue: root.service.formatNozzle(1)
+            nozzleLeftActive: root.service.activeNozzle === 0
+            nozzleRightActive: root.service.activeNozzle === 1
             bedValue: root.service.formatTempPair(
               root.service.bedTemp, root.service.bedTargetTemp)
             layerValue: (root.service.currentLayer || "--") + " / "
@@ -306,6 +309,7 @@ Item {
           }
 
           BambuModelViewport {
+            objectName: "bambuModelViewport"
             width: dashboard.wideLayout
               ? Math.max(0, dashboard.width - telemetryPane.width
                          - dashboardLayout.spacing) : dashboard.width

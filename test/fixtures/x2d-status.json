@@ -1,0 +1,40 @@
+{
+  "print": {
+    "device": {
+      "extruder": {
+        "info": [
+          { "id": 0, "temp": 14418140 },
+          { "id": 1, "temp": 5767327 }
+        ],
+        "state": 274
+      },
+      "nozzle": {
+        "exist": 3,
+        "info": [
+          { "id": 0, "diameter": 0.4, "type": "HS01" },
+          { "id": 1, "diameter": 0.4, "type": "HS01" }
+        ]
+      }
+    },
+    "file": "/data/Metadata/plate_1.gcode",
+    "gcode_file": "/data/Metadata/plate_1.gcode",
+    "gcode_state": "RUNNING",
+    "plate_idx": 1,
+    "subtask_name": "Untitled",
+    "ipcam": {
+      "ipcam_dev": "1",
+      "liveview_preview": true,
+      "resolution": "1080p",
+      "rtsp_url": "disable"
+    }
+  },
+  "info": {
+    "module": [
+      {
+        "name": "ota",
+        "product_name": "Bambu Lab X2D",
+        "sw_ver": "01.01.00.00"
+      }
+    ]
+  }
+}

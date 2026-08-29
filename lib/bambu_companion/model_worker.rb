@@ -8,6 +8,8 @@ require_relative "gcode_source"
 require_relative "geometry_store"
 require_relative "print_preview_loader"
 require_relative "preview_publication"
+require_relative "native_storage_client"
+require_relative "print_archive_client"
 require_relative "three_mf_preview"
 
 module BambuCompanion
@@ -95,8 +97,14 @@ module BambuCompanion
     end
 
     def self.for_printer(config:, secret:, emitter:, on_status:)
+      archive_client = if secret
+                         PrintArchiveClient.new(
+                           external: FtpsClient.new(config: config, secret: secret),
+                           internal: NativeStorageClient.new(config: config, secret: secret)
+                         )
+                       end
       new(
-        ftps_client: secret && FtpsClient.new(config: config, secret: secret),
+        ftps_client: archive_client,
         loader: PrintPreviewLoader.new(
           source: GcodeSource.new,
           gcode_parser: GcodeParser.new(max_segments: config.max_segments),

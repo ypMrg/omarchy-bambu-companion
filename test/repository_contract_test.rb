@@ -110,6 +110,9 @@ class RepositoryContractTest < Minitest::Test
   def test_local_transports_explicitly_use_required_tls_modes
     mqtt = File.read(File.join(ROOT, "lib/bambu_companion/mqtt_session.rb"))
     ftps = File.read(File.join(ROOT, "lib/bambu_companion/ftps_client.rb"))
+    native_storage = File.read(
+      File.join(ROOT, "lib/bambu_companion/native_storage_client.rb")
+    )
     tls = File.read(File.join(ROOT, "lib/bambu_companion/tls_certificate.rb"))
 
     assert_includes mqtt, "verify_host: false"
@@ -120,6 +123,9 @@ class RepositoryContractTest < Minitest::Test
     assert_includes ftps, 'sendcmd("PROT P")'
     assert_includes ftps, "instance_variable_set(:@private_data_connection, true)"
     assert_includes ftps, "configure_pinned_context"
+    assert_includes native_storage, "TlsCertificate.open_pinned"
+    assert_includes native_storage, 'list_entries(protocol, storage: "internal")'
+    refute_match(/FILE_(?:UPLOAD|DEL)/, native_storage)
     assert_includes tls, "OpenSSL::SSL::VERIFY_PEER"
     refute_includes mqtt, "OpenSSL::SSL::VERIFY_NONE"
     refute_includes ftps, "OpenSSL::SSL::VERIFY_NONE"

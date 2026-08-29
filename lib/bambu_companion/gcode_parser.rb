@@ -27,7 +27,7 @@ module BambuCompanion
     ].freeze
     FEATURE_MARKER = /\A(?:FEATURE|TYPE):/i
     NUMBER = /-?(?:\d{1,#{MAX_NUMBER_DIGITS}}(?:\.\d{0,#{MAX_NUMBER_DIGITS}})?|\.\d{1,#{MAX_NUMBER_DIGITS}})(?:[eE][+-]?\d{1,4})?/
-    PARAMETER = /([XYZEIJR])\s*(#{NUMBER})(?![\d.eE+-])/
+    PARAMETER = /([XYZEIJRH])\s*(#{NUMBER})(?![\d.eE+-])/
     ZERO = BigDecimal("0")
     EPSILON = BigDecimal("1e-7")
     FLOAT_EPSILON = EPSILON.to_f
@@ -75,6 +75,8 @@ module BambuCompanion
       @absolute_arc_center = false
       @plane = :xy
       @outer = false
+      @active_tool = 0
+      @tool_extrusion = { 0 => ZERO }
       @position = { "X" => ZERO, "Y" => ZERO, "Z" => ZERO, "E" => ZERO }
       @segments = []
       @source_count = 0
@@ -112,9 +114,29 @@ module BambuCompanion
       when "M83" then @absolute_extrusion = false
       when "G92"
         parameters.each { |axis, value| @position[axis] = value if @position.key?(axis) }
+        @tool_extrusion[@active_tool] = @position["E"] if parameters.key?("E")
       when "G0", "G00", "G1", "G01", "G2", "G02", "G3", "G03"
         move(command, parameters)
+      else
+        select_tool(command, parameters)
       end
+    end
+
+    def select_tool(command, parameters)
+      match = command.match(/\AT(\d{1,5})\z/)
+      return unless match
+
+      requested = parameters["H"] || BigDecimal(match[1])
+      tool = Integer(requested)
+      return unless (0..1).cover?(tool)
+      return if tool == @active_tool
+
+      @tool_extrusion[@active_tool] = @position["E"]
+      @active_tool = tool
+      @position["E"] = @tool_extrusion.fetch(tool, ZERO)
+      @last_source_segment = nil
+    rescue ArgumentError, TypeError
+      nil
     end
 
     def parse_parameters(line)
@@ -150,6 +172,7 @@ module BambuCompanion
       if parameters.key?("E")
         extrusion_delta = @absolute_extrusion ? parameters["E"] - @position["E"] : parameters["E"]
         @position["E"] = @absolute_extrusion ? parameters["E"] : @position["E"] + parameters["E"]
+        @tool_extrusion[@active_tool] = @position["E"]
       end
       unless @position.values.all? { |value| finite_float?(value) } && finite_float?(extrusion_delta)
         @position = before

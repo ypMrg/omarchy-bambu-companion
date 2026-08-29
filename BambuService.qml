@@ -32,6 +32,8 @@ Item {
   property int percent: 0
   property real nozzleTemp: NaN
   property real nozzleTargetTemp: NaN
+  property var nozzles: []
+  property int activeNozzle: -1
   property real bedTemp: NaN
   property real bedTargetTemp: NaN
   property int currentLayer: 0
@@ -571,6 +573,28 @@ Item {
     return currentText + " / " + root.formatTemp(target)
   }
 
+  function hasDualNozzles() {
+    return Array.isArray(root.nozzles) && root.nozzles.length >= 2
+  }
+
+  function nozzleById(id) {
+    if (!Array.isArray(root.nozzles)) return null
+    for (var index = 0; index < root.nozzles.length; index++) {
+      var nozzle = root.objectOrEmpty(root.nozzles[index])
+      var nozzleId = Math.max(0,
+        Math.floor(root.finiteNumber(nozzle.id, index)))
+      if (nozzleId === id) return nozzle
+    }
+    return null
+  }
+
+  function formatNozzle(id) {
+    if (!root.hasDualNozzles())
+      return root.formatTempPair(root.nozzleTemp, root.nozzleTargetTemp)
+    var nozzle = root.nozzleById(id)
+    return nozzle ? root.formatTempPair(nozzle.temp, nozzle.targetTemp) : "--° / --°"
+  }
+
   function formatDuration(minutes) {
     var value = Math.floor(root.finiteNumber(minutes, -1))
     if (value < 0) return "--"
@@ -809,6 +833,8 @@ Item {
     percent = Math.max(0, Math.min(100, Math.floor(finiteNumber(printer.percent, 0))))
     nozzleTemp = finiteNumber(printer.nozzleTemp, NaN)
     nozzleTargetTemp = finiteNumber(printer.nozzleTargetTemp, NaN)
+    nozzles = Array.isArray(printer.nozzles) ? printer.nozzles : []
+    activeNozzle = Math.floor(finiteNumber(printer.activeNozzle, -1))
     bedTemp = finiteNumber(printer.bedTemp, NaN)
     bedTargetTemp = finiteNumber(printer.bedTargetTemp, NaN)
     currentLayer = Math.max(0, Math.floor(finiteNumber(printer.layer, 0)))
@@ -882,6 +908,8 @@ Item {
     percent = 0
     nozzleTemp = NaN
     nozzleTargetTemp = NaN
+    nozzles = []
+    activeNozzle = -1
     bedTemp = NaN
     bedTargetTemp = NaN
     currentLayer = 0
