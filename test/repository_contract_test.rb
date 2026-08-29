@@ -41,7 +41,7 @@ class RepositoryContractTest < Minitest::Test
     defaults = manifest.fetch("barWidget").fetch("defaults")
 
     assert_equal "io.github.ypmrg.bambu-companion", manifest.fetch("id")
-    assert_equal "1.7.2", manifest.fetch("version")
+    assert_equal "1.8.0", manifest.fetch("version")
     assert_includes manifest.fetch("kinds"), "bar-widget"
     assert_includes manifest.fetch("kinds"), "service"
     assert_includes manifest.fetch("kinds"), "panel"

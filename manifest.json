@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.ypmrg.bambu-companion",
   "name": "Bambu Companion",
-  "version": "1.7.2",
+  "version": "1.8.0",
   "author": "Matthieu G.C.",
   "license": "MIT",
   "description": "Local Bambu Lab monitoring with 2D, G-code, and chamber camera previews",

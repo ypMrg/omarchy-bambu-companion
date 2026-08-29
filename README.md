@@ -116,9 +116,12 @@ MQTT telemetry continues.
 
 ## Chamber camera
 
-Stills, not live video. About 1 Hz while Camera is actually on screen. Leaving
-the view, or opening Settings or Events, stops the session and deletes the
-still.
+Stills, not live video. About 1 Hz while Camera is actually on screen. RTSP
+families keep one ffmpeg session open instead of reconnecting for every still.
+Leaving the view, or opening Settings or Events, stops the session and deletes
+the still. A pinned loopback TLS gateway handles the printer's RTSP
+Basic/Digest challenge; ffmpeg receives only a localhost URL, never the LAN
+access code.
 
 | Family | Transport | Needs |
 | --- | --- | --- |
@@ -129,8 +132,9 @@ Some H2 firmware also needs **LAN Mode Liveview**.
 
 ## Compatibility
 
-Live-tested only on an A1 Mini. Other rows are protocol expectations, not a
-guarantee. Firmware can change these undocumented interfaces at any time.
+Live-tested on an A1 Mini and an X2D. Other rows are protocol expectations,
+not a guarantee. Firmware can change these undocumented interfaces at any
+time.
 
 | Family | Support | Notes |
 | --- | --- | --- |
@@ -138,11 +142,24 @@ guarantee. Firmware can change these undocumented interfaces at any time.
 | A1 / P1P / P1S | Expected | JPEG camera on port 6000 |
 | X1 / X1C / X1E | Expected | RTSP camera on 322, needs `ffmpeg` |
 | A2L / P2S / H2S | Experimental | A2 JPEG; P2/H2 RTSP |
-| H2D / H2C / X2D | Experimental | Dual-nozzle telemetry and toolpaths are partial; enable **LAN Mode Liveview** on H2 |
+| H2D / H2C | Experimental | Dual-nozzle telemetry and combined dual-tool route; enable **LAN Mode Liveview** |
+| X2D | Live-tested | USB archive/plate selection, persistent RTSPS camera, dual-nozzle temperatures and combined dual-tool route; internal eMMC fallback is protocol-tested and still needs live hardware validation |
 
-Not shown: second nozzle, AMS, chamber heating, door/fan extras, laser or
-cutting jobs. Dual-tool G-code on H2D/H2C/X2D is unverified. Bed size is taken
-from the active G-code, not assumed to be an A1 Mini.
+Not shown: AMS, chamber heating, door/fan extras, laser or cutting jobs. X2D
+shows both nozzle temperatures and marks the active nozzle. Its route parser
+keeps absolute extrusion state separate for both hotends; the route is combined
+rather than color-coded per tool. Bed size is taken from the active G-code.
+
+The moving point in Route is a path animation, not live XY telemetry from the
+printer. X2D firmware does not publish a usable live XY position in the status
+payload currently handled by the plugin.
+
+For X2D jobs whose `/data/Metadata/plate_N.gcode` archive is not present on the
+USB volume, the plugin falls back to the printer's read-only CTRL storage API
+over pinned TLS on port 6000. It lists the logical `internal` model view first,
+then the `emmc` model view for firmware compatibility, downloads only the
+matching active archive and verifies its reported size, offsets and MD5 before
+publishing it. It never uploads, deletes or renames printer files.
 
 ## Security
 
@@ -155,7 +172,9 @@ from the active G-code, not assumed to be an A1 Mini.
 - Print files are private temp files and are deleted after parse. Camera stills
   are one `snapshot.jpg` (`0600`), wiped when the view closes, rejected above
   1 MiB or 4 megapixels. ffmpeg gets a loopback RTSP URL with no LAN code.
-- MQTT, FTPS and camera TLS pin the SHA-256 leaf from **Trust & Connect**.
+- MQTT and FTPS pin their SHA-256 leaves from **Trust & Connect**. Camera TLS
+  and the read-only internal-storage client accept only those explicitly
+  approved device leaves and add no implicit trust exception.
 
 ## Requirements
 
@@ -179,9 +198,17 @@ and that TCP `8883` / `990` are open. Camera also needs `6000` or `322`.
 
 **No preview.** Wait for heating/calibration, confirm a `.gcode` / `.3mf` is
 on the printer, then **Reload preview**. Telemetry still works without it.
+On X2D the plugin recognizes `/data/Metadata/plate_N.gcode` as the selected
+entry inside the active `.gcode.3mf` and uses the external archive with the
+matching print name. If FTPS does not expose it, the plugin tries the read-only
+internal-storage route described above. Until that fallback is live-validated
+on your firmware, sending the job to external storage remains the proven route.
 
 **No camera.** Printer must be online. JPEG families use port `6000`; RTSP
-families use `322` and `ffmpeg`. H2 may need **LAN Mode Liveview**.
+families use `322` and `ffmpeg`. X2/H2 firmware may need **LAN Mode Liveview**.
+An `auth_failed` event means the RTSP server rejected the configured LAN access
+code; `certificate_changed` requires reviewing and approving the printer leaf
+again.
 
 ```bash
 journalctl -t omarchy-shell -b --no-pager \
