@@ -415,7 +415,7 @@ class QmlSettingsContractTest < Minitest::Test
     refute_nil writer
     assert_match(/persistingSettings = true.*root\.settings = entry.*root\.shell\.updateEntryInline\(root\.moduleName, entry\).*persistingSettings = false/m,
                  writer)
-    assert_match(/function persistSettings\(draft\).*var entry = \{ id: root\.moduleName \}.*return root\.commitSettingsEntry\(entry\)/m,
+    assert_match(/function persistSettings\(draft, clearAcknowledgements\).*var entry = \{ id: root\.moduleName \}.*root\.commitSettingsEntry\(entry\).*return true/m,
                  service)
     assert_match(/function saveSettings\(draft, accessCode\).*backendSettingsChanged\(draft\).*persistSettings\(draft\).*return \{ ok: true, mode:/m,
                  service)
@@ -581,7 +581,7 @@ class QmlSettingsContractTest < Minitest::Test
     assert_includes body, 'mqttTlsFingerprint: ""'
     assert_includes body, 'ftpsTlsFingerprint: ""'
     assert_includes body, 'installationId: ""'
-    assert_operator body.index("persistSettings(reset)"), :<,
+    assert_operator body.index("persistSettings(reset, true)"), :<,
                     body.index('attentionRequested("setup", "")')
     assert_match(/message\.event === "secret_status".*disconnectPending.*message\.requestId === root\.disconnectRequestId.*message\.stored === false.*completeDisconnect\(\)/m,
                  source)
@@ -591,7 +591,7 @@ class QmlSettingsContractTest < Minitest::Test
                  source)
     assert_match(/message\.event === "error".*root\.disconnectPending.*message\.requestId === root\.disconnectRequestId.*message\.scope === "secret".*failDisconnect\(/m,
                  source)
-    assert_match(/function persistSettings\(draft\).*draft\.installationId === undefined.*root\.installationId.*String\(draft\.installationId \|\| ""\)/m,
+    assert_match(/function persistSettings\(draft, clearAcknowledgements\).*draft\.installationId === undefined.*root\.installationId.*String\(draft\.installationId \|\| ""\)/m,
                  source)
     failure = source[/function failDisconnect\(message\) \{.*?\n  \}/m]
     refute_nil failure
@@ -624,7 +624,7 @@ class QmlSettingsContractTest < Minitest::Test
                  hello)
     refute_match(/popupOpen\s*=\s*true/, hello)
     refute_match(/openSettings\(\)/, hello)
-    assert_match(/function persistSettings\(draft\).*entry\.installationId = draft\.installationId === undefined.*root\.installationId/m,
+    assert_match(/function persistSettings\(draft, clearAcknowledgements\).*entry\.installationId = draft\.installationId === undefined.*root\.installationId/m,
                  service)
     assert_match(/function onRequiresInitialSetupChanged\(\).*root\.surfaceActive.*root\.service\.requiresInitialSetup.*root\.viewMode = "setup".*settingsView\.load/m,
                  dashboard)

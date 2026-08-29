@@ -351,6 +351,14 @@ class QmlContractTest < Minitest::Test
                  @service_source)
     assert_match(/function refreshSettings\(\).*setAcknowledgedAlertKeys/m,
                  @service_source)
+    assert_match(
+      /function persistSettings\(draft, clearAcknowledgements\).*entry\.acknowledgedAlerts = clearAcknowledgements === true.*eventStore\.acknowledgedAlertKeys\.slice\(\).*setAcknowledgedAlertKeys\(\[\]\)/m,
+      @service_source
+    )
+    assert_match(
+      /function completeDisconnect\(\).*persistSettings\(reset, true\)/m,
+      @service_source
+    )
   end
 
   def test_status_panel_is_landscape_and_reflows_before_it_can_overflow
@@ -674,7 +682,7 @@ class QmlContractTest < Minitest::Test
                  @source)
     assert_match(/function settingsDraft\(\).*explosionFactor: root\.explosionFactor/m,
                  @source)
-    assert_match(/function persistSettings\(draft\).*entry\.explosionFactor = draft\.explosionFactor/m,
+    assert_match(/function persistSettings\(draft, clearAcknowledgements\).*entry\.explosionFactor = draft\.explosionFactor/m,
                  @source)
     assert_match(/BambuModelViewport\s*\{.*explosionFactor: root\.service\.explosionFactor/m,
                  @dashboard_source)
@@ -690,7 +698,7 @@ class QmlContractTest < Minitest::Test
     assert_includes @source, 'setting("autoRotate", true) !== false'
     assert_match(/function settingsDraft\(\).*autoRotate: root\.autoRotate/m,
                  @source)
-    assert_match(/function persistSettings\(draft\).*entry\.autoRotate = draft\.autoRotate/m,
+    assert_match(/function persistSettings\(draft, clearAcknowledgements\).*entry\.autoRotate = draft\.autoRotate/m,
                  @source)
     assert_match(/BambuModelViewport\s*\{.*autoRotateDefault: root\.service\.autoRotate/m,
                  @dashboard_source)
@@ -704,7 +712,7 @@ class QmlContractTest < Minitest::Test
     assert_equal "boolean", summary_schema&.fetch("type")
     assert_includes @source, 'readonly property bool showBarSummary: setting("showBarSummary", true) !== false'
     assert_match(/function settingsDraft\(\).*showBarSummary: root\.showBarSummary/m, @source)
-    assert_match(/function persistSettings\(draft\).*entry\.showBarSummary = draft\.showBarSummary/m,
+    assert_match(/function persistSettings\(draft, clearAcknowledgements\).*entry\.showBarSummary = draft\.showBarSummary/m,
                  @source)
     assert_match(/Text\s*\{.*visible: !root\.vertical && \(!root\.service \|\| root\.service\.showBarSummary\).*text: root\.compactLabel\(\)/m,
                  @widget_source)

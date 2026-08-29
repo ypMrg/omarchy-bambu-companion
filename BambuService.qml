@@ -266,7 +266,7 @@ Item {
     return true
   }
 
-  function persistSettings(draft) {
+  function persistSettings(draft, clearAcknowledgements) {
     var entry = { id: root.moduleName }
     entry.printerName = draft.printerName
     entry.host = draft.host
@@ -282,7 +282,12 @@ Item {
     entry.ftpsTlsFingerprint = String(draft.ftpsTlsFingerprint || "")
     entry.installationId = draft.installationId === undefined
       ? root.installationId : String(draft.installationId || "")
-    return root.commitSettingsEntry(entry)
+    entry.acknowledgedAlerts = clearAcknowledgements === true
+      ? [] : eventStore.acknowledgedAlertKeys.slice()
+    if (!root.commitSettingsEntry(entry)) return false
+    if (clearAcknowledgements === true)
+      eventStore.setAcknowledgedAlertKeys([])
+    return true
   }
 
   // The immediate toggle must not save partially edited printer credentials
@@ -764,7 +769,7 @@ Item {
       ftpsTlsFingerprint: "",
       installationId: ""
     }
-    if (!root.persistSettings(reset)) {
+    if (!root.persistSettings(reset, true)) {
       root.failDisconnect("Disconnected, but Omarchy Shell could not reset the settings")
       return
     }

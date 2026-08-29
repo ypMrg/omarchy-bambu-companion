@@ -33,13 +33,16 @@ ShellRoot {
 
   QtObject {
     id: fakeShell
+    property var lastUpdatedEntry: ({})
     property var shellConfig: ({
       bar: { layout: { left: [], center: [], right: [{
         id: "io.github.ypmrg.bambu-companion",
         acknowledgedAlerts: ["hms:persistent"]
       }] } }
     })
-    function updateEntryInline(_, __) {}
+    function updateEntryInline(_, entry) {
+      lastUpdatedEntry = JSON.parse(JSON.stringify(entry))
+    }
   }
 
   BambuPlugin.BambuService {
@@ -93,6 +96,26 @@ ShellRoot {
           })
           if (!alert || !alert.read || service.unreadWarningCount !== 0) {
             root.finishFailure("startup state discarded an HMS acknowledgement")
+            return
+          }
+          var draft = service.settingsDraft()
+          if (!service.persistSettings(draft)) {
+            root.finishFailure("settings rewrite failed")
+            return
+          }
+          var saved = fakeShell.lastUpdatedEntry.acknowledgedAlerts
+          if (!Array.isArray(saved) || saved.length !== 1
+              || saved[0] !== "hms:persistent") {
+            root.finishFailure("settings rewrite discarded an HMS acknowledgement")
+            return
+          }
+          if (!service.persistSettings(draft, true)) {
+            root.finishFailure("identity reset rewrite failed")
+            return
+          }
+          var cleared = fakeShell.lastUpdatedEntry.acknowledgedAlerts
+          if (!Array.isArray(cleared) || cleared.length !== 0) {
+            root.finishFailure("identity reset kept HMS acknowledgements")
             return
           }
           root.verifiedStartupAcknowledgement = true
