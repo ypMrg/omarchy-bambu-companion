@@ -10,11 +10,17 @@ class QmlServiceSmokeTest < Minitest::Test
   HARNESS = File.join(ROOT, "test/qml/service_smoke/shell.qml")
   SHELL_MODULES = %w[Commons Ui].freeze
   STAGING_EXCLUSIONS = %w[.bundle .git graphify-out test].freeze
+  OMARCHY_SHELL = File.join(ENV.fetch("OMARCHY_PATH", "/usr/share/omarchy"), "shell")
   LIVE_DATA_ROOT = File.expand_path(
     "~/.local/share/io.github.ypmrg.bambu-companion"
   )
 
   def test_offline_demo_loads_service_dashboard_route_and_animation
+    unless File.directory?(File.join(OMARCHY_SHELL, "Commons")) &&
+           File.directory?(File.join(LIVE_DATA_ROOT, "qml/native"))
+      skip "requires a local Omarchy shell and compiled native renderer"
+    end
+
     Dir.mktmpdir("bq-") do |temporary_root|
       config_dir = File.join(temporary_root, "config")
       data_home = File.join(temporary_root, "data")
@@ -30,7 +36,7 @@ class QmlServiceSmokeTest < Minitest::Test
         "BAMBU_COMPANION_DISABLE_UPDATE_CHECK" => "1",
         "XDG_DATA_HOME" => data_home,
         "XDG_RUNTIME_DIR" => runtime_dir,
-        "QML_IMPORT_PATH" => "/usr/share/omarchy/shell"
+        "QML_IMPORT_PATH" => OMARCHY_SHELL
       }
       stdout, stderr, status = Open3.capture3(
         environment, "timeout", "45", "quickshell", "--no-color",
@@ -56,7 +62,7 @@ class QmlServiceSmokeTest < Minitest::Test
       FileUtils.cp_r(File.join(ROOT, entry), plugin_dir, preserve: true)
     end
     SHELL_MODULES.each do |name|
-      FileUtils.cp_r(File.join("/usr/share/omarchy/shell", name), config_dir)
+      FileUtils.cp_r(File.join(OMARCHY_SHELL, name), config_dir)
     end
     FileUtils.cp(HARNESS, File.join(config_dir, "shell.qml"))
   end
