@@ -241,6 +241,7 @@ Item {
   function refreshSettings() {
     var next = root.settingsFromShell()
     if (JSON.stringify(next) !== JSON.stringify(root.settings)) root.settings = next
+    eventStore.setAcknowledgedAlertKeys(next.acknowledgedAlerts)
   }
 
   function initialize() {
@@ -671,11 +672,26 @@ Item {
   }
 
   function markEventRead(id) {
-    return eventStore.markRead(id)
+    var changed = eventStore.markRead(id)
+    if (changed) root.persistEventAcknowledgements()
+    return changed
   }
 
   function markAllEventsRead() {
-    return eventStore.markAllRead()
+    var changed = eventStore.markAllRead()
+    if (changed) root.persistEventAcknowledgements()
+    return changed
+  }
+
+  function persistEventAcknowledgements() {
+    var current = root.settings && typeof root.settings === "object"
+      ? root.settings : ({})
+    var entry = { id: root.moduleName }
+    for (var key in current) {
+      if (key !== "id") entry[key] = current[key]
+    }
+    entry.acknowledgedAlerts = eventStore.acknowledgedAlertKeys
+    return root.commitSettingsEntry(entry)
   }
 
   function writeCommand(command) {
@@ -886,8 +902,13 @@ Item {
           previousGcodeState, root.gcodeState,
           previousSubtaskName, root.subtaskName,
           eventContext, reportUpdate)
+        var acknowledgementsBefore = JSON.stringify(
+          eventStore.acknowledgedAlertKeys)
+        eventStore.reconcileAlerts(printer.alerts, eventContext, reportUpdate)
+        if (acknowledgementsBefore !== JSON.stringify(
+            eventStore.acknowledgedAlertKeys))
+          root.persistEventAcknowledgements()
       }
-      eventStore.reconcileAlerts(printer.alerts, eventContext, reportUpdate)
     }
     if (stateWasUnknown) root.statusAvailable()
   }

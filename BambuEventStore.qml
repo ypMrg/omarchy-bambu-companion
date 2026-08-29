@@ -14,6 +14,43 @@ QtObject {
   property int activeErrorCount: 0
   property bool demoEventsLoaded: false
   readonly property int maximumEvents: 200
+  property var acknowledgedAlertKeys: []
+  readonly property int maximumAcknowledgedAlerts: 100
+
+  function normalizedAlertKey(value) {
+    var key = String(value || "").trim()
+    if (!key) return ""
+    return key.slice(0, 256)
+  }
+
+  function setAcknowledgedAlertKeys(values) {
+    var source = Array.isArray(values) ? values : []
+    var seen = ({})
+    var normalized = []
+    for (var index = 0; index < source.length; index++) {
+      var key = store.normalizedAlertKey(source[index])
+      if (!key || seen[key]) continue
+      seen[key] = true
+      normalized.push(key)
+      if (normalized.length >= store.maximumAcknowledgedAlerts) break
+    }
+    if (JSON.stringify(normalized) !== JSON.stringify(store.acknowledgedAlertKeys))
+      store.acknowledgedAlertKeys = normalized
+  }
+
+  function isAlertAcknowledged(value) {
+    return store.acknowledgedAlertKeys.indexOf(
+      store.normalizedAlertKey(value)) >= 0
+  }
+
+  function acknowledgeAlertKey(value) {
+    var key = store.normalizedAlertKey(value)
+    if (!key || store.isAlertAcknowledged(key)) return false
+    var updated = [key].concat(store.acknowledgedAlertKeys)
+    store.acknowledgedAlertKeys = updated.slice(
+      0, store.maximumAcknowledgedAlerts)
+    return true
+  }
 
   function timestamp(value) {
     var parsed = new Date(String(value || ""))
@@ -33,6 +70,7 @@ QtObject {
       summary: String(values.summary || ""),
       description: String(values.description || values.summary || ""),
       code: String(values.code || ""),
+      alertKey: store.normalizedAlertKey(values.alertKey),
       source: String(values.source || "printer"),
       module: String(values.module || ""),
       severityName: String(values.severityName || ""),
@@ -82,7 +120,10 @@ QtObject {
   function markRead(id) {
     var event = store.eventById(id)
     if (!event || event.read) return false
-    return store.replaceEvent(id, { read: true })
+    var changed = store.replaceEvent(id, { read: true })
+    if (changed && event.category === "alert")
+      store.acknowledgeAlertKey(event.alertKey)
+    return changed
   }
 
   function markAllRead() {
@@ -92,6 +133,8 @@ QtObject {
       var copy = ({})
       for (var key in event) copy[key] = event[key]
       copy.read = true
+      if (event.category === "alert")
+        store.acknowledgeAlertKey(event.alertKey)
       changed = true
       return copy
     })
@@ -226,6 +269,7 @@ QtObject {
         summary: String(alert.description || alert.code || "Printer alert"),
         description: String(alert.description || "No explanation was supplied by the printer."),
         code: String(alert.code || ""),
+        alertKey: key,
         source: String(alert.source || "hms"),
         module: String(alert.module || ""),
         severityName: String(alert.severity || ""),
@@ -238,7 +282,7 @@ QtObject {
         productName: String(context.productName || ""),
         firmwareVersion: String(context.firmwareVersion || ""),
         active: true,
-        read: false
+        read: store.isAlertAcknowledged(key)
       })
       incoming[key] = { eventId: eventId, severity: severity }
       changed = true
