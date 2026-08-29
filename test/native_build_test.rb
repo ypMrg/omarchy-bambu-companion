@@ -18,25 +18,31 @@ class NativeBuildTest < Minitest::Test
   end
 
   def test_missing_cmake_exits_nonzero_without_a_module
-    Dir.mktmpdir do |data|
-      env = default_env(data).merge("PATH" => empty_path_without("cmake"))
-      _out, _err, status = Open3.capture3(env, [BUILD, BUILD])
-      refute_predicate status, :success?
-      refute Dir.glob(File.join(data, "qml/native/lib*")).any?
+    Dir.mktmpdir do |bin|
+      Dir.mktmpdir do |data|
+        write_failing_command(bin, "cmake")
+        env = default_env(data).merge("PATH" => "#{bin}:#{ENV.fetch("PATH")}")
+        _out, _err, status = Open3.capture3(env, [BUILD, BUILD])
+        refute_predicate status, :success?
+        refute Dir.glob(File.join(data, "qml/native/lib*")).any?
+      end
     end
   end
 
   def test_stamp_hit_skips_rebuild_and_keeps_existing_module
-    Dir.mktmpdir do |data|
-      native = File.join(data, "qml/native")
-      FileUtils.mkdir_p(native)
-      File.write(File.join(native, "RouteHost.qml"), "GcodeRoute {}\n")
-      File.write(File.join(native, ".stamp"),
-                 stamp_for(File.join(ROOT, "native")))
-      env = default_env(data).merge("PATH" => empty_path_without("cmake"))
-      out, err, status = Open3.capture3(env, [BUILD, BUILD])
-      assert_predicate status, :success?, "#{out} #{err}"
-      assert_includes File.read(File.join(native, "RouteHost.qml")), "GcodeRoute"
+    Dir.mktmpdir do |bin|
+      Dir.mktmpdir do |data|
+        native = File.join(data, "qml/native")
+        FileUtils.mkdir_p(native)
+        File.write(File.join(native, "RouteHost.qml"), "GcodeRoute {}\n")
+        File.write(File.join(native, ".stamp"),
+                   stamp_for(File.join(ROOT, "native")))
+        write_failing_command(bin, "cmake")
+        env = default_env(data).merge("PATH" => "#{bin}:#{ENV.fetch("PATH")}")
+        out, err, status = Open3.capture3(env, [BUILD, BUILD])
+        assert_predicate status, :success?, "#{out} #{err}"
+        assert_includes File.read(File.join(native, "RouteHost.qml")), "GcodeRoute"
+      end
     end
   end
 
@@ -53,18 +59,21 @@ class NativeBuildTest < Minitest::Test
       after = stamp_for(source)
       refute_equal before, after
 
-      Dir.mktmpdir do |data|
-        native = File.join(data, "qml/native")
-        FileUtils.mkdir_p(native)
-        File.write(File.join(native, "RouteHost.qml"), "GcodeRoute {}\n")
-        File.write(File.join(native, ".stamp"), before)
-        env = {
-          "BAMBU_NATIVE_DATA_ROOT" => data,
-          "BAMBU_NATIVE_SOURCE_ROOT" => source,
-          "PATH" => empty_path_without("cmake")
-        }
-        _out, _err, status = Open3.capture3(env, [BUILD, BUILD])
-        refute_predicate status, :success?
+      Dir.mktmpdir do |bin|
+        Dir.mktmpdir do |data|
+          native = File.join(data, "qml/native")
+          FileUtils.mkdir_p(native)
+          File.write(File.join(native, "RouteHost.qml"), "GcodeRoute {}\n")
+          File.write(File.join(native, ".stamp"), before)
+          write_failing_command(bin, "cmake")
+          env = {
+            "BAMBU_NATIVE_DATA_ROOT" => data,
+            "BAMBU_NATIVE_SOURCE_ROOT" => source,
+            "PATH" => "#{bin}:#{ENV.fetch("PATH")}"
+          }
+          _out, _err, status = Open3.capture3(env, [BUILD, BUILD])
+          refute_predicate status, :success?
+        end
       end
     end
   end
@@ -159,10 +168,10 @@ class NativeBuildTest < Minitest::Test
       "BAMBU_NATIVE_SOURCE_ROOT" => File.join(ROOT, "native") }
   end
 
-  def empty_path_without(name)
-    ENV.fetch("PATH").split(":").reject { |dir|
-      File.executable?(File.join(dir, name))
-    }.join(":")
+  def write_failing_command(directory, name)
+    path = File.join(directory, name)
+    File.write(path, "#!/bin/bash\nexit 127\n")
+    File.chmod(0o755, path)
   end
 
   def stamp_for(source_root)

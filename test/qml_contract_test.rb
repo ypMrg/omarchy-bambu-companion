@@ -326,6 +326,33 @@ class QmlContractTest < Minitest::Test
     assert_includes @telemetry_source, 'objectName: "MODEL DATA"'
   end
 
+  def test_service_formats_dual_nozzle_telemetry
+    assert_includes @source, "property var nozzles: []"
+    assert_includes @source, "property int activeNozzle: -1"
+    assert_match(/function hasDualNozzles\(\).*nozzles\.length >= 2/m,
+                 @source)
+    assert_match(/function nozzleById\(id\).*nozzleId === id/m, @source)
+    assert_match(/nozzleLeftValue:\s*root\.service\.formatNozzle\(0\)/,
+                 @dashboard_source)
+    assert_match(/nozzleRightValue:\s*root\.service\.formatNozzle\(1\)/,
+                 @dashboard_source)
+    assert_includes @telemetry_source, 'label: pane.dualNozzles ? "NOZZLE LEFT" : "NOZZLE"'
+    assert_includes @telemetry_source, 'label: "NOZZLE RIGHT"'
+  end
+
+  def test_active_alert_acknowledgements_are_bounded_and_persisted
+    assert_includes @event_store_source, "property var acknowledgedAlertKeys: []"
+    assert_includes @event_store_source, "readonly property int maximumAcknowledgedAlerts: 100"
+    assert_match(/function markRead\(id\).*acknowledgeAlertKey\(event\.alertKey\)/m,
+                 @event_store_source)
+    assert_match(/read:\s*store\.isAlertAcknowledged\(key\)/,
+                 @event_store_source)
+    assert_match(/function persistEventAcknowledgements\(\).*acknowledgedAlerts.*commitSettingsEntry/m,
+                 @service_source)
+    assert_match(/function refreshSettings\(\).*setAcknowledgedAlertKeys/m,
+                 @service_source)
+  end
+
   def test_status_panel_is_landscape_and_reflows_before_it_can_overflow
     assert_match(/contentWidth:\s*fittedContentWidth\(Style\.space\(860\)\)/, @source)
     assert_includes @source, "id: dashboardLayout"
@@ -453,8 +480,10 @@ class QmlContractTest < Minitest::Test
     assert_match(/function resetDemoState\(\)\s*{\s*eventStore\.clearDemoEvents\(\)/m,
                  @service_source)
     refute_match(/Component\.onCompleted:.*loadDemoEvents/m, @service_source)
-    assert_match(/function handleState\(message\).*eventStore\.recordPrintTransition\(.*eventStore\.reconcileAlerts\(printer\.alerts/m,
-                 @service_source)
+    assert_match(
+      /function handleState\(message\).*if \(hasFreshReport\) \{.*eventStore\.recordPrintTransition\(.*acknowledgementsBefore.*eventStore\.reconcileAlerts\(printer\.alerts.*persistEventAcknowledgements\(\).*\}/m,
+      @service_source
+    )
     assert_includes @event_store_source, "readonly property int maximumEvents: 200"
     transition = @event_store_source[/function recordPrintTransition\(.*?\n  }/m]
     refute_nil transition

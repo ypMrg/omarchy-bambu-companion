@@ -82,6 +82,8 @@ Item {
 
   readonly property string currentVersion: root.manifest && root.manifest.version
     ? String(root.manifest.version) : "unknown"
+  readonly property bool automaticUpdateCheckEnabled:
+    Quickshell.env("BAMBU_COMPANION_DISABLE_UPDATE_CHECK") !== "1"
   property bool pluginUpdateAvailable: false
   property bool pluginUpdateStatusKnown: false
   readonly property bool pluginUpdateBusy: pluginUpdateProcess.running
@@ -250,7 +252,7 @@ Item {
     root.refreshSettings()
     backendSession.start()
     nativeBuild.running = true
-    root.refreshPluginUpdate()
+    if (root.automaticUpdateCheckEnabled) root.refreshPluginUpdate()
     if (!nativeBuild.running && !root.nativeBuildStarted)
       root.markRendererUnavailable()
   }
