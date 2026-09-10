@@ -34,11 +34,13 @@ ShellRoot {
   QtObject {
     id: fakeShell
     property var lastUpdatedEntry: ({})
-    property var shellConfig: ({
-      bar: { layout: { left: [], center: [], right: [{
+    // Mirrors the Omarchy 4.0.3 PluginShellApi: plugins see the bar layout as
+    // barConfig and never the full shellConfig.
+    property var barConfig: ({
+      layout: { left: [], center: [], right: [{
         id: "io.github.ypmrg.bambu-companion",
         acknowledgedAlerts: ["hms:persistent"]
-      }] } }
+      }] }
     })
     function updateEntryInline(_, entry) {
       lastUpdatedEntry = JSON.parse(JSON.stringify(entry))
