@@ -224,9 +224,22 @@ Item {
     return value === undefined || value === null ? fallback : value
   }
 
+  // Omarchy 4.0.3 injects a capability-scoped PluginShellApi as `shell`. It
+  // carries a copy of the bar layout as `barConfig` and no `shellConfig`;
+  // earlier shells injected the shell root, which exposes both. Prefer
+  // barConfig and keep shellConfig.bar as the fallback for older hosts.
+  function shellBarConfig() {
+    var shell = root.shell
+    if (!shell) return null
+    var bar = shell.barConfig
+    if (bar && typeof bar === "object" && bar.layout) return bar
+    var config = shell.shellConfig
+    return config && typeof config === "object" && config.bar ? config.bar : null
+  }
+
   function settingsFromShell() {
-    var config = root.shell ? root.shell.shellConfig : null
-    var layout = config && config.bar ? config.bar.layout : null
+    var bar = root.shellBarConfig()
+    var layout = bar ? bar.layout : null
     var sections = ["left", "center", "right"]
     for (var sectionIndex = 0; layout && sectionIndex < sections.length; sectionIndex++) {
       var entries = layout[sections[sectionIndex]]
@@ -1127,7 +1140,9 @@ Item {
 
   Connections {
     target: root.shell
-    function onShellConfigChanged() { root.refreshSettings() }
+    // barConfig exists on both the 4.0.3 PluginShellApi and the older shell
+    // root, and the shell refreshes it whenever the bar layout is written.
+    function onBarConfigChanged() { root.refreshSettings() }
   }
 
   Component.onCompleted: root.initialize()
