@@ -137,6 +137,28 @@ ShellRoot {
           "recurring alert code should remain acknowledged after restart")
   }
 
+  function verifyAcknowledgedErrorStaysSilent() {
+    resetStore()
+    store.setAcknowledgedAlertKeys([])
+    var fault = { id: "hms:latched", kind: "error",
+      title: "Mainboard error", description: "Latched HMS",
+      code: "HMS_0500_0600_0002_0070" }
+    store.reconcileAlerts([fault], context(), "2026-08-21T12:00:00Z")
+    compare(store.activeErrorCount, 1, "latched alert active errors")
+
+    check(store.markRead(store.events[0].id), "latched alert should be marked read")
+    compare(store.activeErrorCount, 0,
+            "acknowledged alert should stop counting while still active")
+    compare(store.unreadErrorCount, 0, "acknowledged alert unread errors")
+
+    var saved = JSON.parse(JSON.stringify(store.acknowledgedAlertKeys))
+    resetStore()
+    store.setAcknowledgedAlertKeys(saved)
+    store.reconcileAlerts([fault], context(), "2026-08-21T12:01:00Z")
+    compare(store.activeErrorCount, 0,
+            "acknowledged alert should stay silent after restart")
+  }
+
   BambuEventStore { id: store }
 
   Component.onCompleted: Qt.callLater(function() {
@@ -144,6 +166,7 @@ ShellRoot {
       root.verifyPrintTimeline()
       root.verifyAlerts()
       root.verifyAcknowledgementPersistence()
+      root.verifyAcknowledgedErrorStaysSilent()
       root.verifyDemoFixture()
       console.log("BAMBU_EVENT_STORE_PASS")
       Qt.quit()

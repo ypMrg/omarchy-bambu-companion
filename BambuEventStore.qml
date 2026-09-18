@@ -121,8 +121,10 @@ QtObject {
     var event = store.eventById(id)
     if (!event || event.read) return false
     var changed = store.replaceEvent(id, { read: true })
-    if (changed && event.category === "alert")
+    if (changed && event.category === "alert") {
       store.acknowledgeAlertKey(event.alertKey)
+      store.recount()
+    }
     return changed
   }
 
@@ -159,7 +161,7 @@ QtObject {
     var activeErrors = 0
     for (var key in store.activeAlerts) {
       var active = store.activeAlerts[key]
-      if (active.severity === "error") activeErrors++
+      if (active.severity === "error" && !store.isAlertAcknowledged(key)) activeErrors++
     }
     store.unreadCount = unread
     store.unreadErrorCount = unreadErrors
