@@ -25,6 +25,20 @@ module BambuCompanion
       @max_line_bytes = positive_integer(max_line_bytes, "max_line_bytes")
     end
 
+    # Newest .3mf print archives first, for callers that must identify the
+    # active job by archive contents because no file name matches it.
+    def recent_archives(ftp, limit:, cancelled: -> { false })
+      archives = list_paths(ftp, cancelled: cancelled)
+                 .select { |path| path.downcase.end_with?(".3mf") }
+      dated = archives.filter_map do |path|
+        check_cancelled!(cancelled)
+        [path, ftp.mtime(path)]
+      rescue Net::FTPError, ArgumentError, TypeError
+        nil
+      end
+      dated.sort_by { |_path, time| -time.to_f }.first(limit).map(&:first)
+    end
+
     def find(ftp, hints, cancelled: -> { false })
       paths = list_paths(ftp, cancelled: cancelled)
       records = hint_records(hints)
