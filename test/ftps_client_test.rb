@@ -5,6 +5,7 @@ require "openssl"
 require "tmpdir"
 require "bambu_companion/config"
 require "bambu_companion/ftps_client"
+require "zip"
 
 class FtpsClientTest < Minitest::Test
   class FakeFtp
@@ -49,6 +50,10 @@ class FtpsClientTest < Minitest::Test
     end
 
     def size(path) = @files.fetch(path).bytesize
+
+    attr_writer :mtimes
+
+    def mtime(path) = (@mtimes || {}).fetch(path)
 
     def close
       @closed = true
@@ -351,6 +356,75 @@ class FtpsClientTest < Minitest::Test
 
     assert_equal "file_not_found", error.code
     assert_equal "Active print archive is not exposed on external storage", error.message
+  end
+
+  def profile_archive(profile_title:, title: "Design", plate: "Metadata/plate_1.gcode")
+    Zip::OutputStream.write_buffer do |zip|
+      zip.put_next_entry("3D/3dmodel.model")
+      zip.write(<<~XML)
+        <model>
+         <metadata name="Description">&amp;lt;p&amp;gt;notes&amp;lt;/p&amp;gt;</metadata>
+         <metadata name="ProfileTitle">#{profile_title}</metadata>
+         <metadata name="Title">#{title}</metadata>
+        </model>
+      XML
+      zip.put_next_entry(plate)
+      zip.write("G1 X1\n")
+    end.string
+  end
+
+  def makerworld_hints
+    { "gcode_file" => "/data/Metadata/plate_1.gcode", "subtask_name" => "V1.0 PLA" }
+  end
+
+  def test_makerworld_profile_title_selects_the_archive_naming_that_profile
+    match = profile_archive(profile_title: "V1.0 PLA", title: "PSOAS FRAME – Release Tool")
+    other = profile_archive(profile_title: "0.2mm PETG")
+    object, ftp = client(
+      { "/PSOAS_FRAME.gcode.3mf" => match, "/Newer.gcode.3mf" => other,
+        "/Old.gcode.3mf" => match },
+      max_bytes: 1 << 20
+    )
+    ftp.mtimes = {
+      "/Newer.gcode.3mf" => Time.at(300), "/PSOAS_FRAME.gcode.3mf" => Time.at(200),
+      "/Old.gcode.3mf" => Time.at(100)
+    }
+
+    Dir.mktmpdir do |dir|
+      destination = File.join(dir, "download")
+      remote = object.download(hints: makerworld_hints, destination: destination)
+
+      assert_equal "/PSOAS_FRAME.gcode.3mf", remote
+      assert_equal match, File.binread(destination)
+      assert_equal ["/Newer.gcode.3mf", "/PSOAS_FRAME.gcode.3mf"], ftp.retrieved
+    end
+  end
+
+  def test_profile_fallback_only_runs_on_the_final_attempt
+    object, ftp = client({ "/Newer.gcode.3mf" => profile_archive(profile_title: "Other") },
+                         max_bytes: 1 << 20)
+    ftp.mtimes = { "/Newer.gcode.3mf" => Time.at(1) }
+
+    Dir.mktmpdir do |dir|
+      destination = File.join(dir, "download")
+      error = assert_raises(BambuCompanion::FtpsError) do
+        object.download(hints: makerworld_hints, destination: destination)
+      end
+
+      assert_equal "Active print archive is not exposed on external storage", error.message
+      assert_equal ["/Newer.gcode.3mf"], ftp.retrieved
+      refute File.exist?(destination)
+    end
+  end
+
+  def test_profile_fallback_requires_the_active_plate_in_the_archive
+    archive = profile_archive(profile_title: "V1.0 PLA", plate: "Metadata/plate_2.gcode")
+    object, ftp = client({ "/Design.gcode.3mf" => archive }, max_bytes: 1 << 20)
+    ftp.mtimes = { "/Design.gcode.3mf" => Time.at(1) }
+
+    assert_raises(BambuCompanion::FtpsError) do
+      object.download(hints: makerworld_hints, destination: File.join(Dir.tmpdir, "unused-#{rand(1 << 30)}"))
+    end
   end
 
   def test_x2d_internal_entry_prefers_active_cache_copy_over_root_duplicate

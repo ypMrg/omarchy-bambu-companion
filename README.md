@@ -200,7 +200,10 @@ and that TCP `8883` / `990` are open. Camera also needs `6000` or `322`.
 on the printer, then **Reload preview**. Telemetry still works without it.
 On X2D the plugin recognizes `/data/Metadata/plate_N.gcode` as the selected
 entry inside the active `.gcode.3mf` and uses the external archive with the
-matching print name. If FTPS does not expose it, the plugin tries the read-only
+matching print name. MakerWorld jobs report the profile title (for example
+`V1.0 PLA`) instead, so when no name matches the plugin checks the three newest
+SD-card archives for one whose `ProfileTitle` or `Title` metadata names the
+job and that contains the active plate. If FTPS does not expose it, the plugin tries the read-only
 internal-storage route described above. Until that fallback is live-validated
 on your firmware, sending the job to external storage remains the proven route.
 

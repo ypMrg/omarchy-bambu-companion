@@ -3,7 +3,10 @@
 require "net/ftp"
 require "openssl"
 require "tempfile"
+require_relative "archive_name"
+require_relative "archive_profile"
 require_relative "ftps_error"
+require_relative "print_file_hints"
 require_relative "sd_card_file_locator"
 require_relative "tls_certificate"
 
@@ -31,6 +34,7 @@ module BambuCompanion
 
   class FtpsClient
     BARE_SOCKET_CLEANUP_VERSION = "0.3.9"
+    PROFILE_CANDIDATE_LIMIT = 3
 
     def initialize(config:, secret:, max_bytes: 1 << 30, ftp_factory: nil,
                    sleeper: ->(seconds) { sleep(seconds) }, attempts: 3,
@@ -62,7 +66,7 @@ module BambuCompanion
       @attempts.times do |attempt|
         return download_once(
           hints: hints, destination: destination, cancelled: cancelled,
-          progress: progress
+          progress: progress, profile_fallback: attempt + 1 == @attempts
         )
       rescue FtpsError => error
         raise unless %w[file_not_found transport].include?(error.code) &&
@@ -77,9 +81,56 @@ module BambuCompanion
 
     private
 
-    def download_once(hints:, destination:, cancelled:, progress:)
+    def download_once(hints:, destination:, cancelled:, progress:, profile_fallback: false)
       ftp = @ftp_factory.call(@config, @secret)
-      remote = @file_locator.find(ftp, hints, cancelled: cancelled)
+      begin
+        remote = @file_locator.find(ftp, hints, cancelled: cancelled)
+      rescue FtpsError => error
+        raise unless error.code == "file_not_found" && profile_fallback
+
+        matched = download_by_profile(
+          ftp, hints: hints, destination: destination,
+          cancelled: cancelled, progress: progress
+        )
+        raise unless matched
+
+        return matched
+      end
+      retrieve(ftp, remote, destination: destination, cancelled: cancelled, progress: progress)
+      remote
+    rescue FtpsError
+      raise
+    rescue TlsCertificateError => error
+      raise FtpsError.new(error.code, error.message), cause: nil
+    rescue StandardError
+      raise FtpsError.new("transport", "FTPS transfer failed"), cause: nil
+    ensure
+      safely_close(ftp)
+    end
+
+    # Last resort when no SD-card name matches the job: a MakerWorld print
+    # reports its profile title as the job name, so fetch the newest archives
+    # and keep the first whose own metadata names that profile.
+    def download_by_profile(ftp, hints:, destination:, cancelled:, progress:)
+      values = hints.to_h
+      subtask = values["subtask_name"] || values[:subtask_name]
+      return if ArchiveName.canonical(subtask).empty?
+      return unless @file_locator.respond_to?(:recent_archives)
+
+      plate_entry = PrintFileHints.internal_gcode_entry(hints)
+      candidates = @file_locator.recent_archives(
+        ftp, limit: PROFILE_CANDIDATE_LIMIT, cancelled: cancelled
+      )
+      candidates.each do |remote|
+        retrieve(ftp, remote, destination: destination, cancelled: cancelled, progress: progress)
+        return remote if ArchiveProfile.matches?(destination, subtask, plate_entry: plate_entry)
+
+        safely_unlink(destination)
+      end
+      nil
+    end
+
+    def retrieve(ftp, remote, destination:, cancelled:, progress:)
       raise_cancelled if cancelled.call
 
       bytes = 0
@@ -110,17 +161,9 @@ module BambuCompanion
       temporary.close
       File.rename(temporary_path, destination)
       temporary_path = nil
-      remote
-    rescue FtpsError
-      raise
-    rescue TlsCertificateError => error
-      raise FtpsError.new(error.code, error.message), cause: nil
-    rescue StandardError
-      raise FtpsError.new("transport", "FTPS transfer failed"), cause: nil
     ensure
       safely_close(temporary)
       safely_unlink(temporary_path)
-      safely_close(ftp)
     end
 
     def raise_cancelled
