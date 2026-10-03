@@ -434,13 +434,14 @@ module BambuCompanion
       private
 
       def serve
-        @local = @server.accept
+        @local = accept_authorized_client
+        return unless @local
+
         begin
           @server.close
         ensure
           @server = nil
         end
-        return unless local_peer?(@local)
 
         @remote = TlsCertificate.open_pinned(
           host: @host, port: @port, fingerprint: @fingerprint,
@@ -500,6 +501,20 @@ module BambuCompanion
         close_sockets
       end
 
+      def accept_authorized_client
+        loop do
+          break if @stop
+
+          socket = @server.accept
+          return socket if local_peer?(socket)
+
+          socket.close
+        end
+        nil
+      rescue IOError, SystemCallError
+        nil
+      end
+
       def close_sockets
         [@server, @local, @remote].each do |socket|
           socket&.close
@@ -508,11 +523,49 @@ module BambuCompanion
         end
       end
 
+      # Only the local ffmpeg child we spawn may use this relay.  IP alone is
+      # not an identity on a shared host, so the kernel-reported owner of the
+      # connecting socket must be this process's own Unix user.  SO_PEERCRED
+      # does not work for AF_INET sockets, so resolve the owner through
+      # /proc/net/tcp, where sk_uid cannot be forged by another user.
       def local_peer?(socket)
-        ip = socket.peeraddr[3]
-        ip == "127.0.0.1" || ip == "::1"
+        return false unless loopback_address?(socket.peeraddr[3])
+
+        peer_uid(socket) == Process.uid
       rescue StandardError
         false
+      end
+
+      def loopback_address?(address)
+        address == "127.0.0.1" || address == "::1"
+      end
+
+      def peer_uid(socket)
+        peer = socket.peeraddr
+        local = socket.addr
+        socket_uid(peer[3], peer[1], local[1])
+      rescue StandardError
+        nil
+      end
+
+      def socket_uid(client_ip, client_port, server_port)
+        return nil unless client_ip == "127.0.0.1"
+
+        local = "#{ipv4_hex(client_ip)}:#{format('%04X', client_port)}"
+        remote = "#{ipv4_hex('127.0.0.1')}:#{format('%04X', server_port)}"
+        File.foreach("/proc/net/tcp") do |line|
+          fields = line.split
+          next unless fields.length > 7
+          next unless fields[1] == local && fields[2] == remote
+          next unless fields[3] == "01" # ESTABLISHED
+
+          return fields[7].to_i
+        end
+        nil
+      end
+
+      def ipv4_hex(address)
+        address.split(".").map(&:to_i).reverse.pack("C4").unpack1("H*").upcase
       end
 
       def tls_bytes_pending?

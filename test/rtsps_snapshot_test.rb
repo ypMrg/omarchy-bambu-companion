@@ -570,6 +570,31 @@ class RtspsSnapshotTest < Minitest::Test
     end
   end
 
+  def test_loopback_gateway_resolves_the_connecting_socket_owner_uid
+    gateway = new_gateway
+    server = TCPServer.new("127.0.0.1", 0)
+    port = server.addr[1]
+    client = TCPSocket.new("127.0.0.1", port)
+    accepted = server.accept
+
+    assert_equal Process.uid, gateway.send(:peer_uid, accepted)
+    assert gateway.send(:local_peer?, accepted)
+  ensure
+    client&.close
+    accepted&.close
+    server&.close
+  end
+
+  def test_loopback_gateway_rejects_a_peer_owned_by_another_unix_user
+    gateway = new_gateway
+    foreign = Object.new
+    def foreign.peeraddr = ["AF_INET", 40_000, "127.0.0.1", "127.0.0.1"]
+    def foreign.addr = ["AF_INET", 40_001, "127.0.0.1", "127.0.0.1"]
+    gateway.define_singleton_method(:peer_uid) { |_socket| Process.uid + 1 }
+
+    refute gateway.send(:local_peer?, foreign)
+  end
+
   def test_capped_stdout_rejects_oversize_before_decode
     huge = StringIO.new("x" * (BambuCompanion::CameraStore::MAX_JPEG_BYTES + 1))
     error = assert_raises(BambuCompanion::RtspsError) do
