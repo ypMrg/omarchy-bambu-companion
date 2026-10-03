@@ -77,6 +77,7 @@ Item {
     Text {
       width: parent.width
       text: dialog.tlsFingerprint(parent.identity)
+      textFormat: Text.PlainText
       color: dialog.foreground
       wrapMode: Text.WrapAnywhere
       font.family: dialog.fontFamily
@@ -86,6 +87,7 @@ Item {
     Text {
       width: parent.width
       text: dialog.tlsDescription(parent.identity)
+      textFormat: Text.PlainText
       color: dialog.dim
       elide: Text.ElideRight
       font.family: dialog.fontFamily

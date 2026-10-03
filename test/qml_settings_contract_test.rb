@@ -114,6 +114,7 @@ class QmlSettingsContractTest < Minitest::Test
     assert_includes component, "width: parent ? parent.width : implicitWidth"
     assert_includes component, "dialog.tlsFingerprint(parent.identity)"
     assert_includes component, "dialog.tlsDescription(parent.identity)"
+    assert_equal 2, component.scan("textFormat: Text.PlainText").length
     assert_equal 2, instances.length
     assert_includes instances.fetch(0), "identity: dialog.mqttIdentity"
     assert_includes instances.fetch(0),
