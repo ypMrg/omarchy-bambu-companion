@@ -240,7 +240,9 @@ Item {
   function settingsFromShell() {
     var bar = root.shellBarConfig()
     var layout = bar ? bar.layout : null
-    var sections = ["left", "center", "right"]
+    // Every section, not a fixed list: Omarchy 4.5 adds centerBegin, centerEnd
+    // and tray, and moves widgets from center to centerEnd.
+    var sections = layout ? Object.keys(layout) : []
     for (var sectionIndex = 0; layout && sectionIndex < sections.length; sectionIndex++) {
       var entries = layout[sections[sectionIndex]]
       if (!Array.isArray(entries)) continue

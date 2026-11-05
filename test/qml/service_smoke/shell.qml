@@ -35,12 +35,14 @@ ShellRoot {
     id: fakeShell
     property var lastUpdatedEntry: ({})
     // Mirrors the Omarchy 4.0.3 PluginShellApi: plugins see the bar layout as
-    // barConfig and never the full shellConfig.
+    // barConfig and never the full shellConfig. Omarchy 4.5 adds the
+    // centerBegin, centerEnd and tray sections and moves center widgets to
+    // centerEnd, so the entry lives there.
     property var barConfig: ({
-      layout: { left: [], center: [], right: [{
+      layout: { left: [], centerBegin: [], center: [], centerEnd: [{
         id: "io.github.ypmrg.bambu-companion",
         acknowledgedAlerts: ["hms:persistent"]
-      }] }
+      }], right: [], tray: [] }
     })
     function updateEntryInline(_, entry) {
       lastUpdatedEntry = JSON.parse(JSON.stringify(entry))
