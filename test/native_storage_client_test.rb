@@ -312,23 +312,21 @@ class NativeStorageClientTest < Minitest::Test
   # header word of large responses; the payload itself stays well-formed.
   def test_accepts_non_zero_reserved_header_word_from_printer
     archive = "PK\x03\x04abc".b
-    transcript = frame(LOGIN_ACK, "") +
-                 control_frame({ "mtype" => 12_291, "sequence" => 0, "result" => 0 }, "", 127) +
-                 control_frame(
-                   {
-                     "mtype" => 12_289, "cmdtype" => 1, "sequence" => 1, "result" => 0,
-                     "reply" => { "file_lists" => [
-                       { "name" => "Part.gcode.3mf", "path" => "/cache/Part.gcode.3mf",
-                         "size" => archive.bytesize }
-                     ] }
-                   }, "", 3_204_871_958
-                 ) +
-                 control_frame(
-                   {
-                     "mtype" => 12_289, "cmdtype" => 2, "sequence" => 2, "result" => 0,
-                     "reply" => { "size" => archive.bytesize }
-                   }, archive, 126
-                 )
+    transcript = basic_transcript(
+      name: "Part.gcode.3mf", size: archive.bytesize, reserved: 3_204_871_958,
+      download_frames: [
+        control_frame(
+          {
+            "mtype" => 12_289, "cmdtype" => 4, "sequence" => 3, "result" => 0,
+            "reply" => {
+              "size" => archive.bytesize, "offset" => 0,
+              "total" => archive.bytesize,
+              "file_md5" => Digest::MD5.hexdigest(archive)
+            }
+          }, archive, 126
+        )
+      ]
+    )
     client = build_client(ScriptedSocket.new(transcript))
 
     Dir.mktmpdir do |directory|
@@ -406,17 +404,19 @@ class NativeStorageClientTest < Minitest::Test
     }
   end
 
-  def basic_transcript(name:, size:, download_frames:)
+  def basic_transcript(name:, size:, download_frames:, reserved: 0)
     frame(LOGIN_ACK, "") +
-      control_frame("mtype" => 12_291, "sequence" => 0, "result" => 0) +
+      control_frame({ "mtype" => 12_291, "sequence" => 0, "result" => 0 }, "", reserved) +
       control_frame(
-        "mtype" => 12_289, "cmdtype" => 1, "sequence" => 1, "result" => 0,
-        "reply" => { "file_lists" => [
-          { "name" => name, "path" => "/cache/#{name}", "size" => size }
-        ] }
+        {
+          "mtype" => 12_289, "cmdtype" => 1, "sequence" => 1, "result" => 0,
+          "reply" => { "file_lists" => [
+            { "name" => name, "path" => "/cache/#{name}", "size" => size }
+          ] }
+        }, "", reserved
       ) +
       control_frame(
-        "mtype" => 12_289, "cmdtype" => 2, "sequence" => 2, "result" => 10
+        { "mtype" => 12_289, "cmdtype" => 2, "sequence" => 2, "result" => 10 }, "", reserved
       ) + download_frames.join
   end
 

@@ -155,7 +155,7 @@ Item {
 
   // Loader.item is typed as QObject, so assign through a dynamic lookup.
   function setMember(object, name, value) {
-    if (object) object[name] = value
+    object[name] = value
   }
 
   function syncRouteGeometry() {
