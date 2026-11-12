@@ -243,11 +243,11 @@ Item {
     // Every section, not a fixed list: Omarchy 4.5 adds centerBegin, centerEnd
     // and tray, and moves widgets from center to centerEnd.
     var sections = layout ? Object.keys(layout) : []
-    for (var sectionIndex = 0; layout && sectionIndex < sections.length; sectionIndex++) {
-      var entries = layout[sections[sectionIndex]]
+    for (let sectionIndex = 0; layout && sectionIndex < sections.length; sectionIndex++) {
+      let entries = layout[sections[sectionIndex]]
       if (!Array.isArray(entries)) continue
-      for (var entryIndex = 0; entryIndex < entries.length; entryIndex++) {
-        var entry = entries[entryIndex]
+      for (let entryIndex = 0; entryIndex < entries.length; entryIndex++) {
+        let entry = entries[entryIndex]
         if (entry && String(entry.id || "") === root.moduleName)
           return JSON.parse(JSON.stringify(entry))
       }
@@ -311,7 +311,7 @@ Item {
     var current = root.settings && typeof root.settings === "object"
       ? root.settings : ({})
     var entry = { id: root.moduleName }
-    for (var key in current) {
+    for (let key in current) {
       if (key !== "id") entry[key] = current[key]
     }
     entry["showBarSummary"] = enabled === true
@@ -602,9 +602,9 @@ Item {
 
   function nozzleById(id) {
     if (!Array.isArray(root.nozzles)) return null
-    for (var index = 0; index < root.nozzles.length; index++) {
-      var nozzle = root.objectOrEmpty(root.nozzles[index])
-      var nozzleId = Math.max(0,
+    for (let index = 0; index < root.nozzles.length; index++) {
+      let nozzle = root.objectOrEmpty(root.nozzles[index])
+      let nozzleId = Math.max(0,
         Math.floor(root.finiteNumber(nozzle.id, index)))
       if (nozzleId === id) return nozzle
     }
@@ -709,7 +709,7 @@ Item {
     var current = root.settings && typeof root.settings === "object"
       ? root.settings : ({})
     var entry = { id: root.moduleName }
-    for (var key in current) {
+    for (let key in current) {
       if (key !== "id") entry[key] = current[key]
     }
     entry.acknowledgedAlerts = eventStore.acknowledgedAlertKeys
@@ -910,7 +910,7 @@ Item {
       handleTlsMismatch("FTPS certificate changed. Check and approve the printer again.")
     }
     if (!root.demoActive) {
-      var eventContext = {
+      let eventContext = {
         printerName: root.displayName,
         productName: root.productName,
         firmwareVersion: root.firmwareVersion,
@@ -924,7 +924,7 @@ Item {
           previousGcodeState, root.gcodeState,
           previousSubtaskName, root.subtaskName,
           eventContext, reportUpdate)
-        var acknowledgementsBefore = JSON.stringify(
+        let acknowledgementsBefore = JSON.stringify(
           eventStore.acknowledgedAlertKeys)
         eventStore.reconcileAlerts(printer.alerts, eventContext, reportUpdate)
         if (acknowledgementsBefore !== JSON.stringify(
@@ -1051,8 +1051,8 @@ Item {
         "Approve the printer certificate before connecting")
     } else if (message.event === "tls_identity") {
       if (message.requestId !== root.tlsProbeRequestId) return
-      var mqttIdentity = objectOrEmpty(message.mqtt)
-      var ftpsIdentity = objectOrEmpty(message.ftps)
+      let mqttIdentity = objectOrEmpty(message.mqtt)
+      let ftpsIdentity = objectOrEmpty(message.ftps)
       if (!root.validTlsFingerprint(mqttIdentity.fingerprint)
           || !root.validTlsFingerprint(ftpsIdentity.fingerprint)) {
         root.clearTlsProbeState()
@@ -1079,7 +1079,7 @@ Item {
       cameraStatusCode = String(message.code || "")
       cameraStatusMessage = String(message.message || "")
     } else if (String(message.event || "").indexOf("geometry_") === 0) {
-      var demoGeometry = message.demoSession !== undefined
+      let demoGeometry = message.demoSession !== undefined
       if ((demoGeometry && root.demoActive
            && message.demoSession === root.demoSessionId)
           || (!demoGeometry && !root.demoActive))

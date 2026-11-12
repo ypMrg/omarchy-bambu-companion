@@ -173,7 +173,7 @@ QtObject {
       clearPending()
       return
     }
-    for (var index = 0; index < expected.length; index++) {
+    for (let index = 0; index < expected.length; index++) {
       if (announced[index] !== expected[index]) {
         clearPending()
         return
@@ -198,10 +198,10 @@ QtObject {
       segmentCount: slot.expectedSegments
     }
     if (preview) {
-      var encoded = preview.parts.join("")
-      var expectedPadding = preview.byteCount % 3 === 0
+      let encoded = preview.parts.join("")
+      let expectedPadding = preview.byteCount % 3 === 0
         ? 0 : 3 - preview.byteCount % 3
-      var suffix = expectedPadding === 0 ? "" : (expectedPadding === 1 ? "=" : "==")
+      let suffix = expectedPadding === 0 ? "" : (expectedPadding === 1 ? "=" : "==")
       if (!encoded.endsWith(suffix)
           || (expectedPadding > 0
             && encoded[encoded.length - expectedPadding - 1] === "=")) {

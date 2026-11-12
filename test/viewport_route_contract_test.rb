@@ -43,31 +43,31 @@ class ViewportRouteContractTest < Minitest::Test
     geometry = extract_function("syncRouteGeometry")
     view = extract_function("syncRouteItem")
 
-    assert_includes geometry, "item.segmentPath = viewport.activeSegmentPath"
-    assert_includes geometry, "item.bounds = viewport.activeBounds"
-    refute_includes view, "item.segmentPath"
-    refute_includes view, "item.bounds"
+    assert_includes geometry, 'viewport.setMember(item, "segmentPath", viewport.activeSegmentPath)'
+    assert_includes geometry, 'viewport.setMember(item, "bounds", viewport.activeBounds)'
+    refute_includes view, '"segmentPath"'
+    refute_includes view, '"bounds"'
     assert_match(/onLoaded:\s*\{\s*viewport\.syncRouteGeometry\(\).*viewport\.syncRouteItem\(\)/m,
                  @source)
     assert_match(/onActiveSegmentPathChanged:\s*\{.*syncRouteGeometry\(\)/m, @source)
     assert_match(/onActiveBoundsChanged:\s*syncRouteGeometry\(\)/, @source)
-    assert_equal 1, @source.scan(/item\.segmentPath\s*=/).length
-    assert_equal 1, @source.scan(/item\.bounds\s*=/).length
+    assert_equal 1, @source.scan(/setMember\(item, "segmentPath",/).length
+    assert_equal 1, @source.scan(/setMember\(item, "bounds",/).length
     refute_match(/onYawChanged:[^\n]*syncRouteGeometry/, @source)
     assert_match(/onYawChanged:\s*viewport\.syncRouteItem\(\)/, @source)
   end
 
   def test_route_item_sync_passes_stroke_alpha_and_explosion_factor
-    assert_includes @source, "item.explosionFactor = routeCamera.explosionFactor"
-    assert_includes @source, "item.cutoffZ = viewport.zCurrent"
-    assert_match(/item\.printedColor = Qt\.rgba\(printed\.r, printed\.g, printed\.b, 0\.74\)/,
+    assert_includes @source, 'viewport.setMember(item, "explosionFactor", routeCamera.explosionFactor)'
+    assert_includes @source, 'viewport.setMember(item, "cutoffZ", viewport.zCurrent)'
+    assert_match(/setMember\(item, "printedColor", Qt\.rgba\(printed\.r, printed\.g, printed\.b, 0\.74\)\)/,
                  @source)
-    assert_match(/item\.remainingColor = Qt\.rgba\(viewport\.foreground\.r, viewport\.foreground\.g,\s*viewport\.foreground\.b, 0\.10\)/m,
+    assert_match(/setMember\(item, "remainingColor", Qt\.rgba\(viewport\.foreground\.r, viewport\.foreground\.g,\s*viewport\.foreground\.b, 0\.10\)\)/m,
                  @source)
-    assert_match(/item\.plateColor = Qt\.rgba\(viewport\.foreground\.r, viewport\.foreground\.g,\s*viewport\.foreground\.b, 0\.07\)/m,
+    assert_match(/setMember\(item, "plateColor", Qt\.rgba\(viewport\.foreground\.r, viewport\.foreground\.g,\s*viewport\.foreground\.b, 0\.07\)\)/m,
                  @source)
-    refute_match(/item\.printedColor\s*=\s*viewport\.accent/, @source)
-    refute_match(/item\.remainingColor\s*=\s*viewport\.foreground/, @source)
+    refute_match(/setMember\(item, "printedColor",\s*viewport\.accent/, @source)
+    refute_match(/setMember\(item, "remainingColor",\s*viewport\.foreground/, @source)
   end
 
   def test_source_icons_are_white_masks_recolored_by_the_plugin_palette
@@ -151,7 +151,7 @@ class ViewportRouteContractTest < Minitest::Test
   def test_native_plate_is_not_toggled_by_the_drag_state
     sync_body = @source[/function syncRouteItem\(\) \{.*?\n  \}/m]
     refute_nil sync_body
-    refute_includes sync_body, "item.dragging"
+    refute_includes sync_body, '"dragging"'
     assert_match(/onDraggingChanged:\s*viewport\.syncNozzleMarker\(\)/, @source)
   end
 
@@ -229,7 +229,7 @@ class ViewportRouteContractTest < Minitest::Test
     assert_includes @source, "property real explodedZoom: 1"
     assert_includes @source, "property real wheelStepAccumulator: 0"
     assert_includes @source, "readonly property real maximumZoom: exploded ? 8 : 4"
-    assert_includes @source, "item.zoom = routeCamera.zoom"
+    assert_includes @source, 'viewport.setMember(item, "zoom", routeCamera.zoom)'
     refute_includes @source, "explodedBaseZoom"
     refute_includes @source, "effectiveZoom"
     assert_match(/function wheelStepDelta\(angleDeltaY, pixelDeltaY\)/, @source)
@@ -286,8 +286,8 @@ class ViewportRouteContractTest < Minitest::Test
     assert_includes @source, "property real explosionProgress: exploded ? 1 : 0"
     assert_match(/Behavior on explosionProgress\s*{\s*NumberAnimation\s*{.*duration:\s*350.*easing\.type:\s*Easing\.InOutCubic/m,
                  @source)
-    assert_includes @source, "item.explosionFactor = routeCamera.explosionFactor"
-    assert_includes @source, "item.explosionProgress = routeCamera.explosionProgress"
+    assert_includes @source, 'viewport.setMember(item, "explosionFactor", routeCamera.explosionFactor)'
+    assert_includes @source, 'viewport.setMember(item, "explosionProgress", routeCamera.explosionProgress)'
   end
 
   def test_explode_button_is_above_the_z_footer_and_only_controls_gcode

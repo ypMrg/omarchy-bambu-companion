@@ -57,9 +57,9 @@ QtObject {
     var text = String(chunk === null || chunk === undefined ? "" : chunk)
     var offset = 0
     while (offset < text.length) {
-      var newlineIndex = text.indexOf("\n", offset)
-      var end = newlineIndex < 0 ? text.length : newlineIndex
-      var part = text.slice(offset, end)
+      let newlineIndex = text.indexOf("\n", offset)
+      let end = newlineIndex < 0 ? text.length : newlineIndex
+      let part = text.slice(offset, end)
       if (!discarding) {
         if (buffer.length + part.length > maxLineChars) {
           buffer = ""
@@ -70,7 +70,7 @@ QtObject {
       }
       if (newlineIndex < 0) break
       if (!discarding) {
-        var line = buffer.endsWith("\r") ? buffer.slice(0, -1) : buffer
+        let line = buffer.endsWith("\r") ? buffer.slice(0, -1) : buffer
         if (stdoutStream) lineReceived(line)
         else errorLineReceived(line)
       }
