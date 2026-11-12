@@ -503,7 +503,7 @@ class QmlContractTest < Minitest::Test
   end
 
   def test_printer_alerts_have_distinct_error_and_maintenance_semantics
-    assert_match(/var severity = String\(alert\.kind \|\| "warning"\) === "error" \? "error" : "warning"/,
+    assert_match(/let severity = String\(alert\.kind \|\| "warning"\) === "error" \? "error" : "warning"/,
                  @event_store_source)
     assert_match(/readonly property bool errorActive: root\.printerHasError\(\).*root\.activePrinterErrorCount > 0/m,
                  @service_source)

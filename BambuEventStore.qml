@@ -27,8 +27,8 @@ QtObject {
     var source = Array.isArray(values) ? values : []
     var seen = ({})
     var normalized = []
-    for (var index = 0; index < source.length; index++) {
-      var key = store.normalizedAlertKey(source[index])
+    for (let index = 0; index < source.length; index++) {
+      let key = store.normalizedAlertKey(source[index])
       if (!key || seen[key]) continue
       seen[key] = true
       normalized.push(key)
@@ -98,8 +98,8 @@ QtObject {
     var updated = store.events.map(function(event) {
       if (event.id !== id) return event
       var copy = ({})
-      for (var key in event) copy[key] = event[key]
-      for (var changeKey in changes) copy[changeKey] = changes[changeKey]
+      for (let key in event) copy[key] = event[key]
+      for (let changeKey in changes) copy[changeKey] = changes[changeKey]
       changed = true
       return copy
     })
@@ -111,7 +111,7 @@ QtObject {
   }
 
   function eventById(id) {
-    for (var index = 0; index < store.events.length; index++) {
+    for (let index = 0; index < store.events.length; index++) {
       if (store.events[index].id === id) return store.events[index]
     }
     return null
@@ -133,7 +133,7 @@ QtObject {
     var updated = store.events.map(function(event) {
       if (event.read) return event
       var copy = ({})
-      for (var key in event) copy[key] = event[key]
+      for (let key in event) copy[key] = event[key]
       copy.read = true
       if (event.category === "alert")
         store.acknowledgeAlertKey(event.alertKey)
@@ -151,16 +151,16 @@ QtObject {
     var unread = 0
     var unreadErrors = 0
     var unreadWarnings = 0
-    for (var index = 0; index < store.events.length; index++) {
-      var event = store.events[index]
+    for (let index = 0; index < store.events.length; index++) {
+      let event = store.events[index]
       if (event.read) continue
       unread++
       if (event.severity === "error") unreadErrors++
       else if (event.severity === "warning") unreadWarnings++
     }
     var activeErrors = 0
-    for (var key in store.activeAlerts) {
-      var active = store.activeAlerts[key]
+    for (let key in store.activeAlerts) {
+      let active = store.activeAlerts[key]
       if (active.severity === "error" && !store.isAlertAcknowledged(key)) activeErrors++
     }
     store.unreadCount = unread
@@ -251,18 +251,18 @@ QtObject {
     var incoming = ({})
     var changed = false
     var list = Array.isArray(alerts) ? alerts : []
-    for (var index = 0; index < list.length; index++) {
-      var alert = list[index]
+    for (let index = 0; index < list.length; index++) {
+      let alert = list[index]
       if (!alert || typeof alert !== "object") continue
-      var key = String(alert.id || alert.code || "")
+      let key = String(alert.id || alert.code || "")
       if (!key || incoming[key]) continue
-      var severity = String(alert.kind || "warning") === "error" ? "error" : "warning"
-      var existing = store.activeAlerts[key]
+      let severity = String(alert.kind || "warning") === "error" ? "error" : "warning"
+      let existing = store.activeAlerts[key]
       if (existing) {
         incoming[key] = existing
         continue
       }
-      var eventId = store.appendEvent({
+      let eventId = store.appendEvent({
         timestamp: at,
         category: "alert",
         action: "raised",
@@ -290,9 +290,9 @@ QtObject {
       changed = true
     }
 
-    for (var activeKey in store.activeAlerts) {
+    for (let activeKey in store.activeAlerts) {
       if (incoming[activeKey]) continue
-      var prior = store.activeAlerts[activeKey]
+      let prior = store.activeAlerts[activeKey]
       store.replaceEvent(prior.eventId, {
         active: false,
         clearedAt: store.timestamp(at)
@@ -305,7 +305,7 @@ QtObject {
   }
 
   function deactivateAlerts(at) {
-    for (var key in store.activeAlerts) {
+    for (let key in store.activeAlerts) {
       store.replaceEvent(store.activeAlerts[key].eventId, {
         active: false,
         clearedAt: store.timestamp(at)
@@ -371,16 +371,16 @@ QtObject {
     ]
 
     var maintenanceId = -1
-    for (var archive = 3; archive >= 0; archive--) {
-      var job = jobs[archive]
-      var shift = archive * 60
-      for (var index = 0; index < templates.length; index++) {
-        var template = templates[index]
-        var isCurrent = archive === 0
-        var isActive = isCurrent && template.active === true
-        var clearedAfter = Number(template.clearedAfter || 0)
+    for (let archive = 3; archive >= 0; archive--) {
+      let job = jobs[archive]
+      let shift = archive * 60
+      for (let index = 0; index < templates.length; index++) {
+        let template = templates[index]
+        let isCurrent = archive === 0
+        let isActive = isCurrent && template.active === true
+        let clearedAfter = Number(template.clearedAfter || 0)
         if (!isCurrent && template.active) clearedAfter = 5
-        var id = store.appendEvent({
+        let id = store.appendEvent({
           timestamp: store.demoTimestamp(template.ago + shift),
           clearedAt: clearedAfter > 0
             ? store.demoTimestamp(template.ago + shift - clearedAfter) : "",
@@ -415,7 +415,7 @@ QtObject {
       return event.source !== "demo"
     })
     var remainingAlerts = ({})
-    for (var key in store.activeAlerts) {
+    for (let key in store.activeAlerts) {
       if (key.indexOf("demo:") !== 0) remainingAlerts[key] = store.activeAlerts[key]
     }
     store.activeAlerts = remainingAlerts

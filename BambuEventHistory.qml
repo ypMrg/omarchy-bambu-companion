@@ -29,8 +29,8 @@ Rectangle {
     ? history.service.unreadWarningCount : 0
   readonly property var selectedEvent: {
     if (history.selectedEventId < 0) return null
-    for (var index = 0; index < history.eventRecords.length; index++) {
-      var event = history.eventRecords[index]
+    for (let index = 0; index < history.eventRecords.length; index++) {
+      let event = history.eventRecords[index]
       if (event.id === history.selectedEventId) return event
     }
     return null

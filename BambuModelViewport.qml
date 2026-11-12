@@ -106,7 +106,7 @@ Item {
       return viewport.cameraStatusMessage
     if (viewport.modelStatus === "loading"
         && viewport.modelLoadPhase === "downloading") {
-      var loaded = formatBytes(viewport.modelLoadedBytes)
+      let loaded = formatBytes(viewport.modelLoadedBytes)
       if (viewport.modelTotalBytes > 0) {
         return loaded + " / " + formatBytes(viewport.modelTotalBytes)
           + " · " + viewport.modelLoadProgress + "%"
@@ -153,29 +153,34 @@ Item {
     return object ? object[name] : undefined
   }
 
+  // Loader.item is typed as QObject, so assign through a dynamic lookup.
+  function setMember(object, name, value) {
+    if (object) object[name] = value
+  }
+
   function syncRouteGeometry() {
     var item = routeLoader.item
     if (!item) return
-    item.segmentPath = viewport.activeSegmentPath
-    item.bounds = viewport.activeBounds
+    viewport.setMember(item, "segmentPath", viewport.activeSegmentPath)
+    viewport.setMember(item, "bounds", viewport.activeBounds)
   }
 
   function syncRouteItem() {
     var item = routeLoader.item
     if (!item) return
-    item.yaw = routeCamera.yaw
-    item.pitch = routeCamera.pitch
-    item.zoom = routeCamera.zoom
-    item.explosionProgress = routeCamera.explosionProgress
-    item.explosionFactor = routeCamera.explosionFactor
-    item.cutoffZ = viewport.zCurrent
-    item.padding = Math.max(Style.space(12), Math.min(routeCamera.width, routeCamera.height) * 0.07)
+    viewport.setMember(item, "yaw", routeCamera.yaw)
+    viewport.setMember(item, "pitch", routeCamera.pitch)
+    viewport.setMember(item, "zoom", routeCamera.zoom)
+    viewport.setMember(item, "explosionProgress", routeCamera.explosionProgress)
+    viewport.setMember(item, "explosionFactor", routeCamera.explosionFactor)
+    viewport.setMember(item, "cutoffZ", viewport.zCurrent)
+    viewport.setMember(item, "padding", Math.max(Style.space(12), Math.min(routeCamera.width, routeCamera.height) * 0.07))
     var printed = viewport.errorActive ? viewport.errorColor : viewport.accent
-    item.printedColor = Qt.rgba(printed.r, printed.g, printed.b, 0.74)
-    item.remainingColor = Qt.rgba(viewport.foreground.r, viewport.foreground.g,
-                                  viewport.foreground.b, 0.10)
-    item.plateColor = Qt.rgba(viewport.foreground.r, viewport.foreground.g,
-                              viewport.foreground.b, 0.07)
+    viewport.setMember(item, "printedColor", Qt.rgba(printed.r, printed.g, printed.b, 0.74))
+    viewport.setMember(item, "remainingColor", Qt.rgba(viewport.foreground.r, viewport.foreground.g,
+                                                       viewport.foreground.b, 0.10))
+    viewport.setMember(item, "plateColor", Qt.rgba(viewport.foreground.r, viewport.foreground.g,
+                                                   viewport.foreground.b, 0.07))
     syncNozzleMarker()
   }
 
