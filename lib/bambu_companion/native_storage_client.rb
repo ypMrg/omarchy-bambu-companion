@@ -531,7 +531,7 @@ module BambuCompanion
         # (H2D-family) firmware leaks uninitialised bytes into it on large
         # responses. Integrity comes from the per-channel magic checks, the
         # length bound and payload validation, so the word is ignored here.
-        length, magic, = read_exact(16).unpack("V4")
+        length, magic = read_exact(16).unpack("VV")
         raise_protocol("Internal-storage response frame is too large") if length > @max_frame_bytes
 
         [magic, read_exact(length)]
