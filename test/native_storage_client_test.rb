@@ -308,6 +308,50 @@ class NativeStorageClientTest < Minitest::Test
     end
   end
 
+  # X2D (H2D-family) firmware leaks uninitialised bytes into the reserved
+  # header word of large responses; the payload itself stays well-formed.
+  def test_accepts_non_zero_reserved_header_word_from_printer
+    archive = "PK\x03\x04abc".b
+    transcript = frame(LOGIN_ACK, "") +
+                 control_frame({ "mtype" => 12_291, "sequence" => 0, "result" => 0 }, "", 127) +
+                 control_frame(
+                   {
+                     "mtype" => 12_289, "cmdtype" => 1, "sequence" => 1, "result" => 0,
+                     "reply" => { "file_lists" => [
+                       { "name" => "Part.gcode.3mf", "path" => "/cache/Part.gcode.3mf",
+                         "size" => archive.bytesize }
+                     ] }
+                   }, "", 3_204_871_958
+                 ) +
+                 control_frame(
+                   {
+                     "mtype" => 12_289, "cmdtype" => 2, "sequence" => 2, "result" => 0,
+                     "reply" => { "size" => archive.bytesize }
+                   }, archive, 126
+                 )
+    client = build_client(ScriptedSocket.new(transcript))
+
+    Dir.mktmpdir do |directory|
+      destination = File.join(directory, "archive.gcode.3mf")
+      remote = client.download(hints: internal_hints("Part"), destination: destination)
+
+      assert_equal "/cache/Part.gcode.3mf", remote
+      assert_equal archive, File.binread(destination)
+    end
+  end
+
+  def test_rejects_wrong_channel_even_with_non_zero_reserved_header_word
+    transcript = frame(LOGIN_ACK, "") +
+                 frame(LOGIN_ACK, JSON.generate("mtype" => 12_291, "sequence" => 0, "result" => 0),
+                       127)
+    client = build_client(ScriptedSocket.new(transcript))
+
+    error = assert_raises(BambuCompanion::NativeStorageError) do
+      client.download(hints: internal_hints("Part"), destination: "/tmp/not-written")
+    end
+    assert_equal "protocol", error.code
+  end
+
   def test_rejects_ambiguous_same_tier
     transcript = frame(LOGIN_ACK, "") +
                  control_frame("mtype" => 12_291, "sequence" => 0, "result" => 0) +
@@ -376,15 +420,15 @@ class NativeStorageClientTest < Minitest::Test
       ) + download_frames.join
   end
 
-  def frame(magic, payload)
+  def frame(magic, payload, reserved = 0)
     bytes = String(payload).b
-    [bytes.bytesize, magic, 0, 0].pack("V4") + bytes
+    [bytes.bytesize, magic, 0, reserved].pack("V4") + bytes
   end
 
-  def control_frame(message, binary = "")
+  def control_frame(message, binary = "", reserved = 0)
     payload = JSON.generate(message).b
     payload += "\n\n".b + binary.b unless binary.empty?
-    frame(CTRL_REPLY, payload)
+    frame(CTRL_REPLY, payload, reserved)
   end
 
   def decode_client_frames(bytes)
