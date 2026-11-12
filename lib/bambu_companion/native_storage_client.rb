@@ -527,8 +527,11 @@ module BambuCompanion
       end
 
       def read_frame
-        length, magic, _sequence, reserved = read_exact(16).unpack("V4")
-        raise_protocol("Internal-storage frame header is invalid") unless reserved.zero?
+        # The fourth header word is reserved and should be zero, but X2D
+        # (H2D-family) firmware leaks uninitialised bytes into it on large
+        # responses. Integrity comes from the per-channel magic checks, the
+        # length bound and payload validation, so the word is ignored here.
+        length, magic, = read_exact(16).unpack("V4")
         raise_protocol("Internal-storage response frame is too large") if length > @max_frame_bytes
 
         [magic, read_exact(length)]
